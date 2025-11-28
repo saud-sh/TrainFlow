@@ -302,6 +302,7 @@ export const insertEnrollmentSchema = createInsertSchema(enrollments).omit({
 
 export const insertRenewalRequestSchema = createInsertSchema(renewalRequests).omit({
   id: true,
+  requestedBy: true,
   createdAt: true,
   updatedAt: true,
 });

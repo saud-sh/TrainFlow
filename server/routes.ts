@@ -338,11 +338,20 @@ export async function registerRoutes(
   app.get("/api/renewals/my", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const renewals = await storage.getRenewalRequestsByUser(req.user!.id);
-      // Enrich with enrollment and course data
+      // Enrich with enrollment (including course), requester, foreman, manager data
       const enriched = await Promise.all(renewals.map(async (r) => {
         const enrollment = await storage.getEnrollment(r.enrollmentId);
         const course = enrollment ? await storage.getCourse(enrollment.courseId) : null;
-        return { ...r, enrollment, course };
+        const requester = await storage.getUser(r.requestedBy);
+        const foreman = r.foremanId ? await storage.getUser(r.foremanId) : null;
+        const manager = r.managerId ? await storage.getUser(r.managerId) : null;
+        return { 
+          ...r, 
+          enrollment: enrollment ? { ...enrollment, course } : null,
+          requester,
+          foreman,
+          manager,
+        };
       }));
       res.json(enriched);
     } catch (error) {
@@ -354,12 +363,20 @@ export async function registerRoutes(
   app.get("/api/renewals/pending", isAuthenticated, requireRole('foreman', 'manager'), async (req: Request, res: Response) => {
     try {
       const approvals = await storage.getPendingApprovals(req.user!.id, req.user!.role);
-      // Enrich with enrollment, course, and requester data
+      // Enrich with enrollment (including course), requester, foreman, manager data
       const enriched = await Promise.all(approvals.map(async (r) => {
         const enrollment = await storage.getEnrollment(r.enrollmentId);
         const course = enrollment ? await storage.getCourse(enrollment.courseId) : null;
         const requester = await storage.getUser(r.requestedBy);
-        return { ...r, enrollment, course, requester };
+        const foreman = r.foremanId ? await storage.getUser(r.foremanId) : null;
+        const manager = r.managerId ? await storage.getUser(r.managerId) : null;
+        return { 
+          ...r, 
+          enrollment: enrollment ? { ...enrollment, course } : null,
+          requester,
+          foreman,
+          manager,
+        };
       }));
       res.json(enriched);
     } catch (error) {
