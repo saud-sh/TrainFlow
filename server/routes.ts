@@ -9,6 +9,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
+import { runManualExpirationCheck } from "./worker";
 
 // Extend Express Request to include user
 declare global {
@@ -993,6 +994,24 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get renewal stats error:", error);
       res.status(500).json({ error: "Failed to generate renewal stats" });
+    }
+  });
+
+  // =====================
+  // ADMIN WORKER ROUTES
+  // =====================
+  app.post("/api/admin/run-expiration-check", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const result = await runManualExpirationCheck();
+      await auditLog(req.user!.id, 'create', 'expiration_check', 'manual', null, result, req);
+      res.json({
+        success: true,
+        message: 'Expiration check completed',
+        ...result,
+      });
+    } catch (error) {
+      console.error("Manual expiration check error:", error);
+      res.status(500).json({ error: "Failed to run expiration check" });
     }
   });
 
