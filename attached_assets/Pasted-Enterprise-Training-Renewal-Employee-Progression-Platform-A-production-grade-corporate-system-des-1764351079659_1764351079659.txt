@@ -1,0 +1,45 @@
+Enterprise Training Renewal & Employee Progression Platform
+
+A production-grade corporate system designed for organizations like Aramco and Saudi Electricity Company.  
+Its purpose is to manage employee training validity, renewal workflows, promotion tasks, KPIs, and AI-driven insights.
+
+Core Capabilities:
+- Track all required training courses per employee.
+- Detect upcoming course expirations using a daily scheduler.
+- Send smart alerts (email + in-app) at 30/14/7/1 days before expiry.
+- Escalate notifications to the foreman if the employee ignores alerts.
+- Allow employees to submit training renewal requests.
+- Support multi-level approval workflow: Employee → Foreman → Manager.
+- Provide dashboards and KPIs for each role.
+- Enable training officers to manage courses and enroll employees.
+- Track progression tasks required for promotions.
+- Provide AI-based course recommendations and grade readiness predictions.
+- Log all system actions (CRUD, login, approvals) with a complete workflow timeline.
+- Generate enterprise reports (PDF, Excel, JSON exports for SAP/Oracle).
+
+User Roles:
+1. Employee
+2. Foreman
+3. Manager
+4. Training Officer
+5. Administrator
+
+Architecture:
+- Modular Monolith with Clean Architecture.
+- Bounded contexts: User Management, Course Management, Enrollment, Renewal Workflow,
+  KPIs Engine, Tasks Engine, Notification Engine, AI Engine, Grade Predictor, Audit Logging,
+  Workflow Timeline.
+- Backend: FastAPI + SQLAlchemy + Background Workers.
+- Frontend: React + Vite + TypeScript + Zustand + TailwindCSS + ShadCN UI.
+
+Non-Functional Requirements:
+- <150ms API response target.
+- Secure authentication (JWT HttpOnly + rate limiting).
+- Multi-tenant readiness using tenant_id.
+- RBAC enforcement across all APIs and pages.
+- Full auditing and observability.
+- No destructive database operations.
+
+Outcome:
+A complete enterprise solution that automates training renewals, ensures compliance,
+improves employee progression, and provides leadership with actionable insights.
