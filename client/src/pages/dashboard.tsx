@@ -24,14 +24,13 @@ import type { UserRole, Enrollment, RenewalRequest, ProgressionTask, Course, Use
 
 interface DashboardStats {
   totalCourses: number;
-  activeCourses: number;
+  completedCourses: number;
   expiringCourses: number;
-  expiredCourses: number;
   pendingRenewals: number;
-  completedTasks: number;
-  totalTasks: number;
-  pendingApprovals?: number;
-  teamSize?: number;
+  pendingApprovals: number;
+  unreadNotifications: number;
+  progressionTasks: number;
+  completedProgressionTasks: number;
 }
 
 interface EnrollmentWithCourse extends Enrollment {
@@ -48,17 +47,28 @@ function EmployeeDashboard() {
     queryKey: ["/api/dashboard/stats"],
   });
 
-  const { data: expiringEnrollments = [], isLoading: enrollmentsLoading } = useQuery<EnrollmentWithCourse[]>({
-    queryKey: ["/api/enrollments/expiring"],
+  const { data: myEnrollments = [], isLoading: enrollmentsLoading } = useQuery<EnrollmentWithCourse[]>({
+    queryKey: ["/api/enrollments/my"],
   });
 
   const { data: pendingRenewals = [], isLoading: renewalsLoading } = useQuery<RenewalWithDetails[]>({
     queryKey: ["/api/renewals/my"],
   });
 
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery<ProgressionTask[]>({
-    queryKey: ["/api/progression-tasks"],
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery<(ProgressionTask & { course?: Course; user?: User })[]>({
+    queryKey: ["/api/progression"],
   });
+
+  const now = new Date();
+  const thirtyDaysFromNow = new Date();
+  thirtyDaysFromNow.setDate(now.getDate() + 30);
+  
+  const expiringEnrollments = myEnrollments.filter((e) => 
+    e.status === 'active' && 
+    e.expiresAt && 
+    new Date(e.expiresAt) <= thirtyDaysFromNow && 
+    new Date(e.expiresAt) >= now
+  );
 
   if (statsLoading) {
     return <DashboardSkeleton />;
@@ -70,8 +80,8 @@ function EmployeeDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           title="Active Courses"
-          value={stats?.activeCourses || 0}
-          subtitle={`of ${stats?.totalCourses || 0} total`}
+          value={stats?.totalCourses || 0}
+          subtitle={`${stats?.completedCourses || 0} completed`}
           icon={<BookOpen className="h-5 w-5" />}
           variant="success"
         />
@@ -90,7 +100,7 @@ function EmployeeDashboard() {
         />
         <KPICard
           title="Progression Tasks"
-          value={`${stats?.completedTasks || 0}/${stats?.totalTasks || 0}`}
+          value={`${stats?.completedProgressionTasks || 0}/${stats?.progressionTasks || 0}`}
           subtitle="Completed"
           icon={<TrendingUp className="h-5 w-5" />}
         />
@@ -283,7 +293,7 @@ function SupervisorDashboard() {
   });
 
   const { data: pendingApprovals = [], isLoading: approvalsLoading } = useQuery<RenewalWithDetails[]>({
-    queryKey: ["/api/renewals/pending-approval"],
+    queryKey: ["/api/renewals/pending"],
   });
 
   if (statsLoading) {
@@ -302,22 +312,22 @@ function SupervisorDashboard() {
           variant={stats?.pendingApprovals ? "warning" : "default"}
         />
         <KPICard
-          title="Team Size"
-          value={stats?.teamSize || 0}
-          subtitle="Direct reports"
+          title="Notifications"
+          value={stats?.unreadNotifications || 0}
+          subtitle="Unread messages"
           icon={<Users className="h-5 w-5" />}
         />
         <KPICard
           title="Expiring Courses"
           value={stats?.expiringCourses || 0}
-          subtitle="Team members affected"
+          subtitle="Within 30 days"
           icon={<AlertTriangle className="h-5 w-5" />}
           variant={stats?.expiringCourses ? "warning" : "default"}
         />
         <KPICard
           title="Completion Rate"
-          value={`${stats?.totalTasks ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0}%`}
-          subtitle="Team training compliance"
+          value={`${stats?.progressionTasks ? Math.round((stats.completedProgressionTasks / stats.progressionTasks) * 100) : 0}%`}
+          subtitle="Progression tasks"
           icon={<TrendingUp className="h-5 w-5" />}
         />
       </div>
@@ -430,13 +440,13 @@ function TrainingOfficerDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           title="Total Courses"
-          value={stats?.totalCourses || 0}
+          value={courses.length}
           subtitle="In the system"
           icon={<BookOpen className="h-5 w-5" />}
         />
         <KPICard
           title="Active Enrollments"
-          value={stats?.activeCourses || 0}
+          value={stats?.totalCourses || 0}
           subtitle="Across all employees"
           icon={<Users className="h-5 w-5" />}
         />
@@ -576,29 +586,30 @@ function AdminDashboard() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
-          title="Total Users"
-          value={stats?.teamSize || 0}
-          subtitle="Active accounts"
+          title="Active Courses"
+          value={stats?.totalCourses || 0}
+          subtitle="Enrollments"
           icon={<Users className="h-5 w-5" />}
         />
         <KPICard
-          title="Total Courses"
-          value={stats?.totalCourses || 0}
-          subtitle="In the system"
+          title="Completed Courses"
+          value={stats?.completedCourses || 0}
+          subtitle="All time"
           icon={<BookOpen className="h-5 w-5" />}
         />
         <KPICard
-          title="Active Enrollments"
-          value={stats?.activeCourses || 0}
-          subtitle="Across all users"
+          title="Expiring Soon"
+          value={stats?.expiringCourses || 0}
+          subtitle="Within 30 days"
           icon={<CheckCircle2 className="h-5 w-5" />}
+          variant={stats?.expiringCourses ? "warning" : "default"}
         />
         <KPICard
           title="Pending Actions"
           value={(stats?.pendingRenewals || 0) + (stats?.pendingApprovals || 0)}
           subtitle="Renewals & approvals"
           icon={<ClipboardCheck className="h-5 w-5" />}
-          variant="warning"
+          variant={(stats?.pendingRenewals || 0) + (stats?.pendingApprovals || 0) > 0 ? "warning" : "default"}
         />
       </div>
 

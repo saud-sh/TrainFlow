@@ -30,15 +30,15 @@ export default function Progression() {
   const [activeTab, setActiveTab] = useState("all");
 
   const { data: tasks = [], isLoading } = useQuery<TaskWithCourse[]>({
-    queryKey: ["/api/progression-tasks"],
+    queryKey: ["/api/progression"],
   });
 
   const updateStatusMutation = useMutation({
     mutationFn: async (data: { id: number; status: string }) => {
-      return apiRequest("PATCH", `/api/progression-tasks/${data.id}`, { status: data.status });
+      return apiRequest("PATCH", `/api/progression/${data.id}`, { status: data.status });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/progression-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/progression"] });
       toast({
         title: "Status Updated",
         description: "Task status has been updated.",

@@ -75,8 +75,15 @@ export default function MyRenewals() {
     queryKey: ["/api/renewals/my"],
   });
 
-  const { data: eligibleEnrollments = [] } = useQuery<EnrollmentWithCourse[]>({
-    queryKey: ["/api/enrollments/renewable"],
+  const { data: myEnrollments = [] } = useQuery<EnrollmentWithCourse[]>({
+    queryKey: ["/api/enrollments/my"],
+  });
+  
+  const eligibleEnrollments = myEnrollments.filter((e) => {
+    const expiresAt = new Date(e.expiresAt);
+    const now = new Date();
+    const daysUntilExpiry = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    return daysUntilExpiry <= 30;
   });
 
   const createRenewalMutation = useMutation({
@@ -85,7 +92,7 @@ export default function MyRenewals() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/renewals/my"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/enrollments/renewable"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/enrollments/my"] });
       setShowNewDialog(false);
       toast({
         title: "Request Submitted",

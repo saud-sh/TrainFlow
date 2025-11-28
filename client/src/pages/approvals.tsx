@@ -70,12 +70,16 @@ export default function Approvals() {
   const isForeman = user?.role === "foreman";
 
   const { data: pendingApprovals = [], isLoading: pendingLoading } = useQuery<RenewalWithDetails[]>({
-    queryKey: ["/api/renewals/pending-approval"],
+    queryKey: ["/api/renewals/pending"],
   });
 
-  const { data: processedApprovals = [], isLoading: processedLoading } = useQuery<RenewalWithDetails[]>({
-    queryKey: ["/api/renewals/processed"],
+  const { data: allRenewals = [], isLoading: processedLoading } = useQuery<RenewalWithDetails[]>({
+    queryKey: ["/api/renewals"],
   });
+
+  const processedApprovals = allRenewals.filter(r => 
+    r.status === 'manager_approved' || r.status === 'rejected' || r.status === 'completed'
+  );
 
   const approveMutation = useMutation({
     mutationFn: async (data: { id: number; comments: string }) => {
