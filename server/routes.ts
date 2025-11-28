@@ -10,6 +10,12 @@ import {
 import { z } from "zod";
 import OpenAI from "openai";
 import { runManualExpirationCheck } from "./worker";
+import {
+  generateTrainingComplianceData, generateTrainingCompliancePDF, generateTrainingComplianceExcel,
+  generateEmployeeProgressData, generateEmployeeProgressPDF, generateEmployeeProgressExcel,
+  generateDepartmentStatsData, generateDepartmentStatsPDF, generateDepartmentStatsExcel,
+  generateJSONExport, verifyDepartmentTenant
+} from "./reports";
 
 // Extend Express Request to include user
 declare global {
@@ -977,6 +983,109 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/reports/stats", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const users = await storage.getAllUsers(tenantId);
+      const enrollments = await storage.getAllEnrollments(tenantId);
+      const allCourses = await storage.getAllCourses(tenantId);
+      const renewals = await storage.getAllRenewalRequests(tenantId);
+      const departments = await storage.getAllDepartments(tenantId);
+      
+      const now = new Date();
+      const thirtyDaysFromNow = new Date();
+      thirtyDaysFromNow.setDate(now.getDate() + 30);
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      const employees = users.filter(u => u.role === 'employee' || u.role === 'foreman');
+      
+      const activeEnrollments = enrollments.filter(e => 
+        e.status === 'active' || e.status === 'completed'
+      ).length;
+      
+      const expiringEnrollments = enrollments.filter(e => {
+        if (!e.expiresAt) return false;
+        const expDate = new Date(e.expiresAt);
+        return expDate > now && expDate <= thirtyDaysFromNow;
+      }).length;
+      
+      const expiredEnrollments = enrollments.filter(e => {
+        if (!e.expiresAt) return false;
+        return new Date(e.expiresAt) < now;
+      }).length;
+      
+      const employeesWithTraining = employees.filter(u => 
+        enrollments.some(e => e.userId === u.id)
+      );
+      
+      // Compliant = has training and no expired courses
+      const compliantEmployeesCount = employeesWithTraining.filter(u => {
+        const userEnrollments = enrollments.filter(e => e.userId === u.id);
+        return !userEnrollments.some(e => e.expiresAt && new Date(e.expiresAt) < now);
+      }).length;
+      
+      // Training Compliance Rate: Compliant trained / All trained (excludes untrained employees)
+      const trainingComplianceRate = employeesWithTraining.length > 0 
+        ? Math.round((compliantEmployeesCount / employeesWithTraining.length) * 100)
+        : 0;
+      
+      // Overall Compliance Rate: Compliant trained / ALL employees (untrained count as non-compliant)
+      const overallComplianceRate = employees.length > 0 
+        ? Math.round((compliantEmployeesCount / employees.length) * 100)
+        : 0;
+      
+      const pendingRenewals = renewals.filter(r => 
+        r.status === 'pending' || r.status === 'foreman_approved'
+      ).length;
+      
+      const approvedThisMonth = renewals.filter(r => {
+        if (r.status !== 'manager_approved' && r.status !== 'completed') return false;
+        if (!r.managerApprovedAt) return false;
+        return new Date(r.managerApprovedAt) >= startOfMonth;
+      }).length;
+      
+      const departmentStats = departments.map(dept => {
+        const deptUsers = employees.filter(u => u.departmentId === dept.id);
+        const deptEnrollments = enrollments.filter(e => 
+          deptUsers.some(u => u.id === e.userId)
+        );
+        const deptExpired = deptEnrollments.filter(e => 
+          e.expiresAt && new Date(e.expiresAt) < now
+        ).length;
+        const deptCompliance = deptEnrollments.length > 0
+          ? Math.round(((deptEnrollments.length - deptExpired) / deptEnrollments.length) * 100)
+          : 100;
+        
+        return {
+          name: dept.name,
+          employees: deptUsers.length,
+          compliance: deptCompliance,
+        };
+      });
+      
+      res.json({
+        totalEmployees: employees.length,
+        employeesWithTraining: employeesWithTraining.length,
+        employeesWithoutTraining: employees.length - employeesWithTraining.length,
+        compliantEmployees: compliantEmployeesCount,
+        totalCourses: allCourses.length,
+        totalEnrollments: enrollments.length,
+        activeEnrollments,
+        expiringEnrollments,
+        expiredEnrollments,
+        complianceRate: trainingComplianceRate,
+        trainingComplianceRate,
+        overallComplianceRate,
+        pendingRenewals,
+        approvedThisMonth,
+        departmentStats,
+      });
+    } catch (error) {
+      console.error("Get report stats error:", error);
+      res.status(500).json({ error: "Failed to generate report stats" });
+    }
+  });
+
   app.get("/api/reports/renewal-stats", isAuthenticated, requireRole('administrator', 'training_officer'), async (req: Request, res: Response) => {
     try {
       const renewals = await storage.getAllRenewalRequests(req.user!.tenantId || 'default');
@@ -994,6 +1103,131 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get renewal stats error:", error);
       res.status(500).json({ error: "Failed to generate renewal stats" });
+    }
+  });
+
+  // =====================
+  // REPORT EXPORT ROUTES
+  // =====================
+  
+  // Training Compliance Report
+  app.get("/api/reports/export/training-compliance/:format", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const { format } = req.params;
+      const tenantId = req.user!.tenantId || 'default';
+      const data = await generateTrainingComplianceData(tenantId);
+      
+      await auditLog(req.user!.id, 'create', 'report_export', 'training_compliance', null, { format }, req);
+      
+      if (format === 'pdf') {
+        const buffer = await generateTrainingCompliancePDF(data);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=training-compliance-report.pdf');
+        res.send(buffer);
+      } else if (format === 'excel') {
+        const buffer = generateTrainingComplianceExcel(data);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=training-compliance-report.xlsx');
+        res.send(buffer);
+      } else if (format === 'json') {
+        const jsonData = generateJSONExport(data);
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', 'attachment; filename=training-compliance-report.json');
+        res.send(jsonData);
+      } else {
+        res.status(400).json({ error: 'Invalid format. Use pdf, excel, or json.' });
+      }
+    } catch (error) {
+      console.error("Training compliance export error:", error);
+      res.status(500).json({ error: "Failed to generate training compliance report" });
+    }
+  });
+  
+  // Employee Progress Report
+  app.get("/api/reports/export/employee-progress/:userId/:format", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { userId, format } = req.params;
+      const tenantId = req.user!.tenantId || 'default';
+      
+      const canView = req.user!.id === userId || 
+        ['administrator', 'training_officer', 'manager'].includes(req.user!.role);
+      
+      if (!canView) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+      
+      const data = await generateEmployeeProgressData(userId, tenantId);
+      if (!data) {
+        return res.status(404).json({ error: "Employee not found or not in your tenant" });
+      }
+      
+      await auditLog(req.user!.id, 'create', 'report_export', 'employee_progress', null, { userId, format }, req);
+      
+      if (format === 'pdf') {
+        const buffer = await generateEmployeeProgressPDF(data);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=employee-progress-${userId}.pdf`);
+        res.send(buffer);
+      } else if (format === 'excel') {
+        const buffer = generateEmployeeProgressExcel(data);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=employee-progress-${userId}.xlsx`);
+        res.send(buffer);
+      } else if (format === 'json') {
+        const jsonData = generateJSONExport(data);
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=employee-progress-${userId}.json`);
+        res.send(jsonData);
+      } else {
+        res.status(400).json({ error: 'Invalid format. Use pdf, excel, or json.' });
+      }
+    } catch (error) {
+      console.error("Employee progress export error:", error);
+      res.status(500).json({ error: "Failed to generate employee progress report" });
+    }
+  });
+  
+  // Department Statistics Report
+  app.get("/api/reports/export/department/:departmentId/:format", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const { departmentId, format } = req.params;
+      const tenantId = req.user!.tenantId || 'default';
+      const deptId = parseInt(departmentId, 10);
+      
+      // Verify department belongs to tenant before generating any data
+      const departmentCheck = await verifyDepartmentTenant(deptId, tenantId);
+      if (!departmentCheck) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+      
+      const data = await generateDepartmentStatsData(deptId, tenantId);
+      if (!data) {
+        return res.status(404).json({ error: "Department not found or not in your tenant" });
+      }
+      
+      await auditLog(req.user!.id, 'create', 'report_export', 'department_stats', null, { departmentId, format }, req);
+      
+      if (format === 'pdf') {
+        const buffer = await generateDepartmentStatsPDF(data);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=department-report-${departmentId}.pdf`);
+        res.send(buffer);
+      } else if (format === 'excel') {
+        const buffer = generateDepartmentStatsExcel(data);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=department-report-${departmentId}.xlsx`);
+        res.send(buffer);
+      } else if (format === 'json') {
+        const jsonData = generateJSONExport(data);
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=department-report-${departmentId}.json`);
+        res.send(jsonData);
+      } else {
+        res.status(400).json({ error: 'Invalid format. Use pdf, excel, or json.' });
+      }
+    } catch (error) {
+      console.error("Department stats export error:", error);
+      res.status(500).json({ error: "Failed to generate department report" });
     }
   });
 
