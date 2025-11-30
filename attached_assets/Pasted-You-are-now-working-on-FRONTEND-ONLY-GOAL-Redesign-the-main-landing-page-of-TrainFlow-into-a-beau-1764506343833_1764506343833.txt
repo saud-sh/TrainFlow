@@ -1,0 +1,155 @@
+You are now working on FRONTEND ONLY.
+
+GOAL:
+Redesign the main landing page of TrainFlow into a beautiful, modern, animated, bilingual (Arabic + English) enterprise-grade marketing page.
+
+Rules:
+- Do NOT modify backend files.
+- Only modify frontend (React + Vite + TypeScript).
+- Use: TailwindCSS + ShadCN UI + Framer Motion + React Router.
+- Must support Arabic (RTL) and English (LTR).
+- Must include a language switcher (العربية / English).
+- All text must be stored in i18n dictionaries (no hard-coded strings).
+- Follow production-grade design practices.
+
+===========================================
+🎨 REQUIRED SECTIONS (HIGH QUALITY)
+===========================================
+
+1) **Hero Section (Animated)**
+   - Title in both EN/AR:
+     EN: "TrainFlow — The Intelligent Training, Renewal & Talent Progression Platform"
+     AR: "TrainFlow — منصة التدريب والتجديد وتطوير المهارات الذكية"
+   - Subheading:
+     EN: “AI-powered compliance, renewals, career paths, and talent intelligence.”
+     AR: "ذكاء اصطناعي لإدارة التدريب، التجديد، المسارات الوظيفية، وتحليل المهارات."
+   - Background gradient animation + subtle particles.
+   - CTA buttons:
+     - "Login"
+     - "Request Demo"
+
+2) **Modules Overview (Cards with Icons + Motion)**
+   Include these modules:
+   - Training Management
+   - Course Renewals Workflow
+   - Multi-level Approvals
+   - Skill Graph Engine
+   - Career Path AI
+   - AI Coaching
+   - KPI & Analytics Dashboard
+   - Security Awareness Simulator
+   - SCORM & LMS Integration
+   - SAP / Oracle / Cornerstone / SuccessFactors Integrations
+
+3) **Enterprise Features**
+   Cards with:
+   - Multi-tenant Isolation
+   - RBAC & Security
+   - Audit Logging
+   - Background Jobs
+   - AI Engines
+   - Real-time Notifications
+
+4) **Training Compliance KPIs**
+   3 animated KPI blocks:
+   - Training Completion Rate
+   - Course Expiration Alerts
+   - Promotion Readiness Score
+
+5) **How TrainFlow Works (Step-by-Step Workflow Animation)**
+   Steps:
+   - Assign Courses
+   - Track Validity
+   - Detect Expiration
+   - Employee Renewal Request
+   - Foreman → Manager Approval
+   - Training Officer Scheduling
+   - KPI Dashboard Update
+   Use Framer Motion for scroll animations.
+
+6) **Integrations Section**
+   Logos + text:
+   - SAP HR
+   - SAP TEM
+   - Oracle HCM
+   - Cornerstone LMS
+   - SuccessFactors LMS
+   - Custom DB Connectors
+
+7) **AI Features Section**
+   - Skill Graph AI
+   - Grade Prediction Engine
+   - AI Coaching
+   - Talent Intelligence Insights
+
+8) **Security & Compliance**
+   - ISO-ready structure
+   - RBAC
+   - JWT with HttpOnly cookies
+   - Audit logs
+   - SOC2-ready logging and monitoring
+
+9) **FAQ Section**
+   Add 6 questions with EN/AR support.
+
+10) **Footer (Bilingual)**
+    - Company info
+    - Contact
+    - Privacy
+    - Terms
+
+===========================================
+⚙️ TECHNICAL REQUIREMENTS
+===========================================
+
+1) Create `/src/i18n/` folder with:
+   - en.ts
+   - ar.ts
+   - index.ts (language switcher logic)
+
+2) Add a global RTL/LTR toggle using:
+   - `dir="rtl"` for Arabic
+   - `dir="ltr"` for English
+
+3) Use ShadCN UI Components:
+   - Cards
+   - Buttons
+   - Navigation Menu
+   - Tabs
+   - Accordion (for FAQ)
+   - Badge
+
+4) Use Framer Motion for:
+   - Fade-in
+   - Slide-up
+   - Parallax hero animations
+   - On-scroll transitions
+
+5) Create componentized structure:
+   - `/src/components/landing/Hero.tsx`
+   - `/src/components/landing/Features.tsx`
+   - `/src/components/landing/KPIs.tsx`
+   - `/src/components/landing/Workflow.tsx`
+   - `/src/components/landing/Integrations.tsx`
+   - `/src/components/landing/Security.tsx`
+   - `/src/components/landing/AI.tsx`
+   - `/src/components/landing/FAQ.tsx`
+   - `/src/components/landing/Footer.tsx`
+   - `/src/components/LanguageSwitcher.tsx`
+
+6) Make page fully responsive (mobile-first).
+
+===========================================
+📌 FINAL REQUIREMENTS
+===========================================
+
+- DO NOT change backend.
+- DO NOT remove existing login functionality.
+- The landing page must look like a professional SaaS enterprise product.
+- All copywriting must be included in both English and Arabic via i18n files.
+- After completion, update README to include:
+  - Screenshot placeholders
+  - Structure of landing components
+  - Instructions to add new languages later
+
+STOP after implementing the landing page and return a completion summary.
