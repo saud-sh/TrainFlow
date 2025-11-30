@@ -27,6 +27,10 @@ import Integrations from "@/pages/integrations";
 import Users from "@/pages/users";
 import AuditLogs from "@/pages/audit-logs";
 import Reports from "@/pages/reports";
+import Profile from "@/pages/profile";
+import Settings from "@/pages/settings";
+import Departments from "@/pages/departments";
+import ApprovalDetails from "@/pages/approval-details";
 
 function LoadingScreen() {
   return (
@@ -98,6 +102,7 @@ function Router() {
         <Route path="/my-courses" component={MyCourses} />
         <Route path="/my-renewals" component={MyRenewals} />
         <Route path="/approvals" component={Approvals} />
+        <Route path="/approvals/:id" component={ApprovalDetails} />
         <Route path="/courses" component={Courses} />
         <Route path="/enrollments" component={Enrollments} />
         <Route path="/recommendations" component={Recommendations} />
@@ -108,6 +113,9 @@ function Router() {
         <Route path="/users" component={Users} />
         <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/reports" component={Reports} />
+        <Route path="/profile" component={Profile} />
+        <Route path="/settings" component={Settings} />
+        <Route path="/departments" component={Departments} />
         <Route component={NotFound} />
       </Switch>
     </AuthenticatedLayout>
