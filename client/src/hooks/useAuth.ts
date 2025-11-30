@@ -16,18 +16,20 @@ const QUERY_KEY = ["/api/v1/users/me"];
 export function useAuth() {
   const queryClient = useQueryClient();
   
-  const { data: user, isLoading, error } = useQuery<User>({
+  const { data: user, isLoading, error } = useQuery<User | null>({
     queryKey: QUERY_KEY,
     queryFn: async () => {
       const res = await fetch("/api/v1/users/me", {
         credentials: "include",
       });
       if (!res.ok) {
-        throw new Error("Not authenticated");
+        // Return null instead of throwing - allows app to render while loading
+        return null;
       }
       return res.json();
     },
     retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const login = async (email: string, password: string): Promise<User> => {

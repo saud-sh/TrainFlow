@@ -1,0 +1,219 @@
+You are working on the TrainFlow project in this Replit.  
+DO NOT refactor or touch any business features (courses, renewals, KPIs, AI, integrations, seed data, etc).  
+FOCUS ONLY on the email/password authentication flow and routing so that:
+
+- `/` = public landing page (no auth)
+- `/login` = public login page (no auth, always visible even if user is not authenticated)
+- Authenticated dashboard + sidebar are shown ONLY after successful login
+- Sidebar and navigation remain EXACTLY as they were before (role-based menu already works; don't change it)
+
+Current symptoms (from production at https://training.rocktech.sa):
+
+- When visiting `/login` I only see a blank screen / loader, not the login form
+- DevTools shows MANY 401 errors calling `GET /api/v1/users/me`
+- So the app keeps trying `/users/me` even when I’m on `/login`, and that blocks rendering
+
+Your job is to **fix the auth flow without breaking any existing pages**.
+
+Follow these steps EXACTLY:
+
+1) Inspect current auth + routing implementation
+- Open: `client/src/App.tsx`
+- Open: `client/src/hooks/useAuth.ts`
+- Open: `client/src/components/layout/ProtectedRoute.tsx` (or similar guarded route component if it exists)
+- Open: `client/src/pages/login.tsx`
+- Open: `server/routes.ts` (or the main Express router where `/api/v1/users/me` and `/api/v1/users/login` are defined)
+
+2) Public routes MUST NOT require auth
+Make sure in `client/src/App.tsx` that:
+- The routes for `/` (landing page) and `/login` are NOT wrapped in any `ProtectedRoute` or auth guard.
+- They should render even when `useAuth()` says `user = null` or `isAuthenticated = false`.
+
+If you have logic like:
+
+```tsx
+const { isAuthenticated, isLoading } = useAuth();
+
+if (isLoading) return <Loader />;
+if (!isAuthenticated) return <LandingPage />;
+inside the top-level App component, you MUST change it so that:
+
+It does NOT block /login.
+
+Auth redirection should happen ONLY inside ProtectedRoute, NOT globally.
+
+Implement something like:
+
+tsx
+Copy code
+// Pseudocode
+const AppRoutes = () => {
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* Protected routes */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <DashboardPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      {/* keep all other existing protected routes unchanged */}
+    </Routes>
+  );
+};
+Do NOT change any existing protected routes other than wrapping them with ProtectedRoute if they are not already.
+
+Fix useAuth so it DOES NOT redirect or block UI
+Open client/src/hooks/useAuth.ts and make sure:
+
+It uses React Query (or similar) to call GET /api/v1/users/me.
+
+It should NOT do any navigate('/login') inside the hook.
+
+It should NOT throw or crash if /users/me returns 401.
+
+It should simply expose:
+
+ts
+Copy code
+{
+  user: data ?? null,
+  isAuthenticated: !!data,
+  isLoading: query.isLoading,
+  login: async (email, password) => { ... },
+  logout: async () => { ... },
+}
+Adjust the query for /users/me like this:
+
+retry: false
+
+refetchOnWindowFocus: false
+
+If the response is 401, treat it as user = null and isAuthenticated = false, but DO NOT redirect. Let ProtectedRoute handle redirect logic.
+
+Ensure login() uses the hook and updates auth state
+In client/src/pages/login.tsx:
+
+DO NOT call fetch or axios directly anymore if it bypasses the auth hook.
+
+Instead, call the login(email, password) method from useAuth():
+
+tsx
+Copy code
+const { login, isAuthenticated } = useAuth();
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError(null);
+  await login(email, password);
+  // after login, redirect to /dashboard
+  navigate('/dashboard');
+};
+If isAuthenticated is already true, redirect away from /login to /dashboard so logged-in users don't see the login page again.
+
+Make /api/v1/users/me safe and simple
+In server/routes.ts (Express router):
+
+Find the route for GET /api/v1/users/me.
+
+Make sure it does NOT rely on any broken middleware that assumes Replit OIDC login.
+
+It should work for the existing email/password session.
+
+Implement something like:
+
+ts
+Copy code
+router.get('/api/v1/users/me', async (req, res) => {
+  // If you use sessions:
+  if (!req.session || !req.session.userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const user = await db.user.findById(req.session.userId);
+  if (!user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  return res.json({
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    firstName: user.first_name,
+    lastName: user.last_name,
+    tenantId: user.tenant_id,
+    departmentId: user.department_id,
+  });
+});
+Make sure POST /api/v1/users/login sets req.session.userId (and any other fields) on successful login, and saves the session BEFORE sending the response.
+
+Cookie settings (do NOT overcomplicate)
+
+Confirm that Express session middleware uses:
+
+ts
+Copy code
+cookie: {
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+}
+On the frontend Axios/fetch client, ensure:
+
+baseURL points to the correct backend URL
+
+withCredentials: true (Axios) or credentials: 'include' (fetch)
+
+Final expected behavior (VERY IMPORTANT)
+After your changes, all of this MUST be true:
+
+Visiting / shows the public landing page (always)
+
+Visiting /login shows the email/password login form (always), even if /users/me returns 401
+
+Submitting:
+
+Email: admin@democorp.local
+
+Password: TrainFlow123!
+logs in successfully
+
+After login:
+
+User is redirected to /dashboard
+
+Dashboard layout + sidebar appear
+
+Sidebar menu items are filtered by role EXACTLY as before (do NOT change role logic)
+
+Refreshing /dashboard keeps the user logged in (session persists)
+
+Visiting /login while already logged in redirects back to /dashboard
+
+No infinite 401 loop in the console for GET /api/v1/users/me
+
+Do NOT refactor unrelated code. Keep changes as small and localized as possible around:
+
+client/src/App.tsx
+
+client/src/hooks/useAuth.ts
+
+client/src/pages/login.tsx
+
+server/routes.ts (only /login and /users/me logic and session configuration if required)
+
+When finished, give me a clear summary of:
+
+EXACTLY what files you changed
+
+How /login and /dashboard behave now
+
+That login works with admin@democorp.local / TrainFlow123! and correct dashboard + sidebar appear.

@@ -10,14 +10,14 @@ import { GraduationCap, ArrowLeft } from "lucide-react";
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
   // If already authenticated, redirect to dashboard
-  if (isAuthenticated) {
+  if (isAuthenticated && !authLoading) {
     setLocation("/dashboard");
     return null;
   }
