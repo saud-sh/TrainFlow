@@ -1,0 +1,241 @@
+We are resuming immediately from where you left off.
+
+PHASE 1 – BLUEPRINT is APPROVED.
+
+You must now complete:
+- Phase 2 – Foundation & Setup
+- Phase 3 – Core Domain & Workflows (MVP)
+- Phase 4 – Demo Seed Data & AI Stubs
+
+This run must deliver a **fully working DEMO-READY platform** exactly as specified in the approved blueprint and in the Interoris Protocol.
+
+============================================================
+GLOBAL MANDATORY RULES
+============================================================
+- Backend MUST be Python + FastAPI + SQLAlchemy ONLY.
+- NO Node.js, NO Express.js, NO Drizzle, NO Prisma.
+- ALL database tables MUST include tenant_id.
+- Migrations MUST be ADDITIVE ONLY (no DROP, no ALTER DROP).
+- AI MUST run via background jobs (never inside HTTP routes).
+- Must follow the blueprint folder structure EXACTLY.
+- Must implement tenant isolation middleware.
+- Must implement RBAC middleware.
+- Must NOT skip security and logging setup.
+- Must use the Phase Execution Protocol (incremental, non-breaking).
+
+============================================================
+PHASE 2 – FOUNDATION & SETUP (DO NOW)
+============================================================
+
+You must complete Phase 2 fully:
+
+1. Create backend/app/main.py:
+   - FastAPI app factory
+   - CORS
+   - CSP
+   - HSTS
+   - X-Frame-Options
+   - X-Content-Type-Options
+   - Logging middleware (JSON logs)
+   - Exception handlers
+   - Register empty routers for all bounded contexts
+   - /api/health and /api/health/detailed
+
+2. Create backend/app/core/config.py
+   - ENV settings using pydantic-settings
+   - DB_URL
+   - Secret keys
+   - Logging configuration
+
+3. Create backend/app/db/database.py:
+   - Create SQLAlchemy engine
+   - SessionLocal
+   - Base
+
+4. Configure Alembic:
+   - alembic.ini
+   - versions folder
+   - env.py correctly wired to SQLAlchemy metadata
+
+5. Create FIRST MIGRATION:
+   - tenants table
+   - users table
+   - Both include tenant_id
+   - Strictly additive-only
+
+6. Placeholder router files:
+   backend/app/api/v1/users.py  
+   backend/app/api/v1/departments.py  
+   backend/app/api/v1/courses.py  
+   backend/app/api/v1/enrollments.py  
+   backend/app/api/v1/renewals.py  
+   backend/app/api/v1/tasks.py  
+   backend/app/api/v1/kpi.py  
+   backend/app/api/v1/ai.py  
+   backend/app/api/v1/integrations.py  
+   backend/app/api/v1/notifications.py  
+   backend/app/api/v1/audit.py  
+   backend/app/api/v1/scorm.py  
+   backend/app/api/v1/security_awareness.py  
+   backend/app/api/v1/skills.py  
+   backend/app/api/v1/career.py  
+
+All routers must be empty placeholders.
+
+7. Frontend initialization:
+   - Setup React + Vite project
+   - TailwindCSS configured
+   - ShadCN UI installed
+   - Basic pages:
+       /login
+       /
+   - Global layout
+   - Axios base client
+   - Zustand slices skeleton
+
+When Phase 2 is complete → Continue to Phase 3 automatically.
+
+============================================================
+PHASE 3 – CORE DOMAIN & WORKFLOWS (MVP)
+============================================================
+
+Implement a MINIMUM fully functional MVP:
+
+Database Models + Migrations:
+- departments
+- courses
+- enrollments
+- renewal_requests
+- workflow_steps
+- workflow_logs
+- progression_tasks
+- employee_tasks
+- notifications
+- audit_logs
+- kpi_snapshots
+
+Authentication:
+- JWT or session in HttpOnly + Secure cookies
+- /api/auth/login
+- /api/auth/logout
+- /api/auth/me
+- Password hashing (bcrypt)
+- Mandatory tenant_id resolution
+
+RBAC:
+- Roles: employee, foreman, manager, training_officer, admin
+- RBAC middleware enforcing role permissions EXACTLY as blueprint
+
+Multi-Tenant Enforcement:
+- Every query filtered by tenant_id
+- Every creation injects tenant_id automatically
+
+APIs (FULL IMPLEMENTATION):
+- Users CRUD (admin)
+- Departments CRUD (admin)
+- Courses CRUD (admin/training_officer)
+- Enrollments CRUD (training_officer/admin)
+- My enrollments (employee)
+- Renewal workflow:
+   - Employee creates request
+   - Foreman approves/rejects
+   - Manager approves/rejects
+- Progression tasks CRUD + employee tasks
+- KPIs:
+   - /api/kpi/summary
+   - /api/kpi/trends/basic
+
+Background Jobs:
+- Daily expiration check
+- Renewal escalation
+- Notifications dispatch
+
+Audit Logging:
+- All CRUD and approval actions logged
+
+Frontend:
+- Implement pages:
+   - /my-courses
+   - /my-renewals
+   - /progression
+   - /approvals
+   - /team
+   - /courses
+   - /enrollments
+   - /users
+   - /departments
+   - /kpi-dashboard
+- Connect all pages to backend
+- Add forms, tables, basic charts
+
+After Phase 3 → Continue to Phase 4.
+
+============================================================
+PHASE 4 – DEMO SEED DATA & AI STUBS (DO NOW)
+============================================================
+
+Add **idempotent tenant-aware seed data**:
+
+Demo Tenant:
+- tenant_id = generated UUID
+- name = "DemoCorp"
+
+Departments:
+- “ERTMD”
+- “TMSD”
+- “JTMD”
+
+Users:
+- admin (password: Admin123)
+- training officer
+- 2 managers
+- 3 foremen
+- ~10 employees
+
+Courses:
+- "Basic Safety Orientation"
+- "Electrical Safety L2"
+- "First Aid & CPR"
+- "SCADA Fundamentals"
+- "Cyber Security Awareness"
+
+Enrollments:
+- Some completed
+- Some active
+- Some expiring
+- Some expired
+
+Renewal Requests:
+- pending
+- approved
+- rejected
+
+Tasks:
+- progression tasks by grade
+- employee tasks (varied status)
+
+KPIs:
+- pre-generated snapshots
+
+AI Stubs:
+- /api/ai/recommendations → return course suggestions based on missing courses
+- /api/ai/grade-readiness → simple readiness scoring
+
+Frontend:
+- Add demo banners / small note
+- Preload dashboard with demo data
+
+============================================================
+AFTER YOU FINISH PHASES 2, 3, AND 4
+============================================================
+
+STOP and produce:
+
+1. Full summary of implemented features  
+2. Instructions for running backend  
+3. Instructions for running frontend  
+4. How to trigger demo seed  
+5. Demo login credentials  
+6. Next recommended phases (Skill Graph, Career Path AI, SCORM, Simulator)
+
+Begin now.
