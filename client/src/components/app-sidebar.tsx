@@ -180,8 +180,8 @@ function getRoleColor(role: UserRole): string {
 }
 
 export function AppSidebar() {
-  const { user } = useAuth();
-  const [location] = useLocation();
+  const { user, logout } = useAuth();
+  const [location, setLocation] = useLocation();
   const userRole = (user?.role as UserRole) || "employee";
 
   const filteredNavItems = navItems.filter((item) =>
@@ -198,8 +198,8 @@ export function AppSidebar() {
   );
 
   const getInitials = () => {
-    if (user?.firstName && user?.lastName) {
-      return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+    if (user?.first_name && user?.last_name) {
+      return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
     }
     if (user?.email) {
       return user.email[0].toUpperCase();
@@ -208,8 +208,8 @@ export function AppSidebar() {
   };
 
   const getDisplayName = () => {
-    if (user?.firstName && user?.lastName) {
-      return `${user.firstName} ${user.lastName}`;
+    if (user?.first_name && user?.last_name) {
+      return `${user.first_name} ${user.last_name}`;
     }
     return user?.email || "User";
   };
@@ -290,7 +290,6 @@ export function AppSidebar() {
               data-testid="button-user-menu"
             >
               <Avatar className="h-9 w-9">
-                <AvatarImage src={user?.profileImageUrl || undefined} className="object-cover" />
                 <AvatarFallback className="text-sm">{getInitials()}</AvatarFallback>
               </Avatar>
               <div className="flex-1 text-left">
@@ -331,11 +330,16 @@ export function AppSidebar() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <a href="/api/logout" className="cursor-pointer text-destructive" data-testid="link-logout">
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign Out
-              </a>
+            <DropdownMenuItem
+              onClick={async () => {
+                await logout();
+                setLocation("/");
+              }}
+              className="text-destructive cursor-pointer"
+              data-testid="button-logout"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

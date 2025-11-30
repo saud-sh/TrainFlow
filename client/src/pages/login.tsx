@@ -31,8 +31,8 @@ export default function Login() {
       });
 
       // Redirect to role-based default route
-      const defaultRoute = getDefaultRouteForRole(user.role);
-      setLocation(defaultRoute, { replace: true });
+      const defaultRoute = getDefaultRouteForRole(user.role as any);
+      setLocation(defaultRoute);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Network error";
       setError(message);
