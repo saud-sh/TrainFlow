@@ -140,9 +140,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/v1/users/me", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/v1/users/me", async (req: Request, res: Response) => {
     try {
-      if (!req.user || !req.user.id) {
+      // Check if user is authenticated (works for both OAuth and email/password sessions)
+      if (!req.isAuthenticated() || !req.user || !req.user.id) {
         return res.status(401).json({ detail: "Unauthorized" });
       }
       
