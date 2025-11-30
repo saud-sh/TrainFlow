@@ -54,13 +54,15 @@ export function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6, duration: 0.8 }}
           >
-            <Button
-              size="lg"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              data-testid="button-hero-login"
-            >
-              {t.hero.cta_login}
-            </Button>
+            <a href="/api/login">
+              <Button
+                size="lg"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                data-testid="button-hero-login"
+              >
+                {t.hero.cta_login}
+              </Button>
+            </a>
             <Button
               size="lg"
               variant="outline"
