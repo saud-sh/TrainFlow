@@ -62,6 +62,28 @@ async function auditLog(
   });
 }
 
+// Helper function to determine next grade level
+function getNextGrade(currentGrade: string): string {
+  const gradeProgression: Record<string, string> = {
+    'G1': 'G2',
+    'G2': 'G3',
+    'G3': 'G4',
+    'G4': 'G5',
+    'G5': 'G6',
+    'G6': 'G7',
+    'G7': 'G8',
+    'G8': 'G9',
+    'G9': 'G10',
+    'G10': 'G11',
+    'G11': 'G12',
+    'G12': 'Senior',
+    'Senior': 'Principal',
+    'Principal': 'Executive',
+    'Executive': 'Executive',
+  };
+  return gradeProgression[currentGrade] || 'G2';
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -827,6 +849,291 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Dismiss recommendation error:", error);
       res.status(500).json({ error: "Failed to dismiss recommendation" });
+    }
+  });
+
+  // =====================
+  // AI GRADE READINESS PREDICTOR
+  // =====================
+  
+  app.post("/api/ai/grade-readiness", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const user = req.user!;
+      const tenantId = user.tenantId || 'default';
+      
+      // Gather comprehensive employee data
+      const enrollments = await storage.getEnrollmentsByUser(user.id);
+      const progressionTasks = await storage.getProgressionTasksByUser(user.id);
+      const allCourses = await storage.getActiveCourses(tenantId);
+      const department = user.departmentId ? await storage.getDepartment(user.departmentId) : null;
+      
+      // Calculate training metrics
+      const now = new Date();
+      const completedEnrollments = enrollments.filter(e => e.status === 'completed' || 
+        (e.status === 'active' && e.completedAt));
+      const activeEnrollments = enrollments.filter(e => e.status === 'active' && !e.completedAt);
+      const expiredEnrollments = enrollments.filter(e => e.expiresAt && new Date(e.expiresAt) < now);
+      
+      // Calculate progression metrics
+      const completedTasks = progressionTasks.filter(t => t.status === 'completed');
+      const inProgressTasks = progressionTasks.filter(t => t.status === 'in_progress');
+      const pendingTasks = progressionTasks.filter(t => t.status === 'not_started');
+      const overdueTasks = progressionTasks.filter(t => 
+        t.dueDate && new Date(t.dueDate) < now && t.status !== 'completed'
+      );
+      
+      // Get mandatory courses compliance
+      const mandatoryCourses = allCourses.filter(c => c.isMandatory);
+      const mandatoryCompleted = mandatoryCourses.filter(mc => 
+        enrollments.some(e => e.courseId === mc.id && 
+          (e.status === 'completed' || (e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)))
+        )
+      );
+      
+      // Determine target grade (from progression tasks or next logical grade)
+      const targetGrades = [...new Set(progressionTasks.map(t => t.targetGrade))];
+      const primaryTargetGrade = targetGrades[0] || getNextGrade(user.currentGrade || 'G1');
+      
+      // Build AI prompt
+      const openai = new OpenAI();
+      
+      const prompt = `You are an AI career development analyst for an enterprise training platform. Analyze the following employee data and provide a comprehensive grade readiness prediction.
+
+EMPLOYEE PROFILE:
+- Name: ${user.firstName} ${user.lastName}
+- Current Grade: ${user.currentGrade || 'Not specified'}
+- Target Grade: ${primaryTargetGrade}
+- Job Title: ${user.jobTitle || 'Not specified'}
+- Department: ${department?.name || 'Not assigned'}
+- Role: ${user.role}
+
+TRAINING METRICS:
+- Total Courses Enrolled: ${enrollments.length}
+- Completed Courses: ${completedEnrollments.length}
+- Active (In Progress): ${activeEnrollments.length}
+- Expired/Overdue: ${expiredEnrollments.length}
+- Mandatory Courses Required: ${mandatoryCourses.length}
+- Mandatory Courses Completed: ${mandatoryCompleted.length}
+
+PROGRESSION TASK STATUS:
+- Total Tasks Assigned: ${progressionTasks.length}
+- Completed: ${completedTasks.length}
+- In Progress: ${inProgressTasks.length}
+- Not Started: ${pendingTasks.length}
+- Overdue: ${overdueTasks.length}
+
+TASK DETAILS:
+${progressionTasks.map(t => `- ${t.title}: ${t.status} (Target: ${t.targetGrade}, Priority: ${t.priority}${t.dueDate ? ', Due: ' + new Date(t.dueDate).toLocaleDateString() : ''})`).join('\n') || 'No tasks assigned'}
+
+COURSE COMPLETION DETAILS:
+${completedEnrollments.slice(0, 10).map(e => {
+  const course = allCourses.find(c => c.id === e.courseId);
+  return `- ${course?.title || 'Unknown Course'} (${course?.category || 'N/A'})`;
+}).join('\n') || 'No completed courses'}
+
+Based on this data, provide a detailed grade readiness assessment. Consider:
+1. Training completion rate and compliance
+2. Progression task completion
+3. Time-based factors (overdue items)
+4. Gap analysis for promotion requirements
+
+Respond in JSON format:
+{
+  "readinessScore": <0-100>,
+  "readinessLevel": "<Not Ready|Developing|On Track|Ready|Exceeds Expectations>",
+  "estimatedTimeToReady": "<timeframe or 'Ready Now'>",
+  "strengths": ["<strength1>", "<strength2>", ...],
+  "gaps": ["<gap1>", "<gap2>", ...],
+  "recommendations": [
+    {"action": "<specific action>", "priority": "<High|Medium|Low>", "impact": "<expected impact>"}
+  ],
+  "detailedAnalysis": "<2-3 paragraph analysis of employee readiness>",
+  "confidenceLevel": <0-100>
+}`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("No response from AI");
+      }
+
+      const prediction = JSON.parse(content);
+      
+      // Add metadata to response
+      const result = {
+        ...prediction,
+        employeeId: user.id,
+        employeeName: `${user.firstName} ${user.lastName}`,
+        currentGrade: user.currentGrade,
+        targetGrade: primaryTargetGrade,
+        department: department?.name,
+        generatedAt: new Date().toISOString(),
+        metrics: {
+          totalEnrollments: enrollments.length,
+          completedCourses: completedEnrollments.length,
+          activeCourses: activeEnrollments.length,
+          expiredCourses: expiredEnrollments.length,
+          mandatoryCompliance: mandatoryCourses.length > 0 
+            ? Math.round((mandatoryCompleted.length / mandatoryCourses.length) * 100) 
+            : 100,
+          totalTasks: progressionTasks.length,
+          completedTasks: completedTasks.length,
+          taskCompletionRate: progressionTasks.length > 0 
+            ? Math.round((completedTasks.length / progressionTasks.length) * 100) 
+            : 0,
+        }
+      };
+      
+      // Log the prediction for audit
+      await storage.createAuditLog({
+        userId: user.id,
+        action: 'create',
+        entityType: 'grade_prediction',
+        entityId: user.id,
+        newValues: { readinessScore: prediction.readinessScore, targetGrade: primaryTargetGrade },
+        tenantId,
+      });
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Grade readiness prediction error:", error);
+      res.status(500).json({ error: "Failed to generate grade readiness prediction" });
+    }
+  });
+  
+  // Get grade readiness for a specific employee (managers/admins only)
+  app.get("/api/ai/grade-readiness/:userId", isAuthenticated, requireRole('administrator', 'training_officer', 'manager', 'foreman'), async (req: Request, res: Response) => {
+    try {
+      const targetUserId = req.params.userId;
+      const tenantId = req.user!.tenantId || 'default';
+      
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser || targetUser.tenantId !== tenantId) {
+        return res.status(404).json({ error: "Employee not found" });
+      }
+      
+      // Gather comprehensive employee data
+      const enrollments = await storage.getEnrollmentsByUser(targetUserId);
+      const progressionTasks = await storage.getProgressionTasksByUser(targetUserId);
+      const allCourses = await storage.getActiveCourses(tenantId);
+      const department = targetUser.departmentId ? await storage.getDepartment(targetUser.departmentId) : null;
+      
+      // Calculate metrics (same as self-assessment)
+      const now = new Date();
+      const completedEnrollments = enrollments.filter(e => e.status === 'completed' || 
+        (e.status === 'active' && e.completedAt));
+      const activeEnrollments = enrollments.filter(e => e.status === 'active' && !e.completedAt);
+      const expiredEnrollments = enrollments.filter(e => e.expiresAt && new Date(e.expiresAt) < now);
+      
+      const completedTasks = progressionTasks.filter(t => t.status === 'completed');
+      const inProgressTasks = progressionTasks.filter(t => t.status === 'in_progress');
+      const pendingTasks = progressionTasks.filter(t => t.status === 'not_started');
+      const overdueTasks = progressionTasks.filter(t => 
+        t.dueDate && new Date(t.dueDate) < now && t.status !== 'completed'
+      );
+      
+      const mandatoryCourses = allCourses.filter(c => c.isMandatory);
+      const mandatoryCompleted = mandatoryCourses.filter(mc => 
+        enrollments.some(e => e.courseId === mc.id && 
+          (e.status === 'completed' || (e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)))
+        )
+      );
+      
+      const targetGrades = [...new Set(progressionTasks.map(t => t.targetGrade))];
+      const primaryTargetGrade = targetGrades[0] || getNextGrade(targetUser.currentGrade || 'G1');
+      
+      const openai = new OpenAI();
+      
+      const prompt = `You are an AI career development analyst for an enterprise training platform. Analyze the following employee data and provide a comprehensive grade readiness prediction.
+
+EMPLOYEE PROFILE:
+- Name: ${targetUser.firstName} ${targetUser.lastName}
+- Current Grade: ${targetUser.currentGrade || 'Not specified'}
+- Target Grade: ${primaryTargetGrade}
+- Job Title: ${targetUser.jobTitle || 'Not specified'}
+- Department: ${department?.name || 'Not assigned'}
+- Role: ${targetUser.role}
+
+TRAINING METRICS:
+- Total Courses Enrolled: ${enrollments.length}
+- Completed Courses: ${completedEnrollments.length}
+- Active (In Progress): ${activeEnrollments.length}
+- Expired/Overdue: ${expiredEnrollments.length}
+- Mandatory Courses Required: ${mandatoryCourses.length}
+- Mandatory Courses Completed: ${mandatoryCompleted.length}
+
+PROGRESSION TASK STATUS:
+- Total Tasks Assigned: ${progressionTasks.length}
+- Completed: ${completedTasks.length}
+- In Progress: ${inProgressTasks.length}
+- Not Started: ${pendingTasks.length}
+- Overdue: ${overdueTasks.length}
+
+TASK DETAILS:
+${progressionTasks.map(t => `- ${t.title}: ${t.status} (Target: ${t.targetGrade}, Priority: ${t.priority}${t.dueDate ? ', Due: ' + new Date(t.dueDate).toLocaleDateString() : ''})`).join('\n') || 'No tasks assigned'}
+
+Based on this data, provide a detailed grade readiness assessment.
+
+Respond in JSON format:
+{
+  "readinessScore": <0-100>,
+  "readinessLevel": "<Not Ready|Developing|On Track|Ready|Exceeds Expectations>",
+  "estimatedTimeToReady": "<timeframe or 'Ready Now'>",
+  "strengths": ["<strength1>", "<strength2>", ...],
+  "gaps": ["<gap1>", "<gap2>", ...],
+  "recommendations": [
+    {"action": "<specific action>", "priority": "<High|Medium|Low>", "impact": "<expected impact>"}
+  ],
+  "detailedAnalysis": "<2-3 paragraph analysis of employee readiness>",
+  "confidenceLevel": <0-100>
+}`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("No response from AI");
+      }
+
+      const prediction = JSON.parse(content);
+      
+      const result = {
+        ...prediction,
+        employeeId: targetUser.id,
+        employeeName: `${targetUser.firstName} ${targetUser.lastName}`,
+        currentGrade: targetUser.currentGrade,
+        targetGrade: primaryTargetGrade,
+        department: department?.name,
+        generatedAt: new Date().toISOString(),
+        metrics: {
+          totalEnrollments: enrollments.length,
+          completedCourses: completedEnrollments.length,
+          activeCourses: activeEnrollments.length,
+          expiredCourses: expiredEnrollments.length,
+          mandatoryCompliance: mandatoryCourses.length > 0 
+            ? Math.round((mandatoryCompleted.length / mandatoryCourses.length) * 100) 
+            : 100,
+          totalTasks: progressionTasks.length,
+          completedTasks: completedTasks.length,
+          taskCompletionRate: progressionTasks.length > 0 
+            ? Math.round((completedTasks.length / progressionTasks.length) * 100) 
+            : 0,
+        }
+      };
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Grade readiness prediction error:", error);
+      res.status(500).json({ error: "Failed to generate grade readiness prediction" });
     }
   });
 

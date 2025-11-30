@@ -36,6 +36,7 @@ import {
   TrendingUp,
   History,
   Sparkles,
+  Brain,
   ChevronUp,
   Building2,
   UserCircle,
@@ -78,6 +79,12 @@ const navItems: NavItem[] = [
     title: "AI Recommendations",
     url: "/recommendations",
     icon: Sparkles,
+    roles: ["employee", "foreman", "manager"],
+  },
+  {
+    title: "Grade Readiness",
+    url: "/grade-readiness",
+    icon: Brain,
     roles: ["employee", "foreman", "manager"],
   },
   {
