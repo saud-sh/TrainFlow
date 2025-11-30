@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import {
   Database,
   Shield,
-  LogSquare,
+  Activity,
   Zap,
   Brain,
   Bell,
@@ -11,7 +11,7 @@ import {
 import { useLanguage } from "@/i18n/LanguageProvider";
 import { languages } from "@/i18n";
 
-const icons = [Database, Shield, LogSquare, Zap, Brain, Bell];
+const icons = [Database, Shield, Activity, Zap, Brain, Bell];
 
 export function Enterprise() {
   const { language } = useLanguage();
