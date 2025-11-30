@@ -1,0 +1,426 @@
+We are now moving to FULL IMPLEMENTATION of the TrainFlow core platform.
+
+IMPORTANT CONTEXT:
+- PHASE 1 – Blueprint in `replit.md` is APPROVED and is the single source of truth.
+- Phase 2 backend foundation is already done:
+  - config.py, database.py, main.py, security middleware, Alembic with tenants & users initial migration, routers skeletons.
+- Environment variables (DB, JWT, OpenAI, SendGrid, etc.) are already configured in Replit.
+
+In this round, you MUST:
+
+1) Complete the FULL CORE BACKEND (Auth, RBAC, tenant isolation, domain models, APIs, background jobs).
+2) Implement KPIs, Tasks, Renewals, Enrollments, Courses, Notifications, Audit.
+3) Implement a DEMO SEED with realistic data for testing.
+4) Implement basic but functional FRONTEND pages for all main flows.
+5) Respect ALL Rock Technology / Interoris rules.
+
+This is a MASTER IMPLEMENTATION PROMPT.  
+You MUST work in PHASES internally (Phase 3, Phase 4, Phase 5) but EXECUTE them IN THIS ROUND.
+
+====================================================
+GLOBAL RULES (DO NOT VIOLATE)
+====================================================
+
+- Backend: Python + FastAPI + SQLAlchemy + Alembic only.
+- Frontend: React + Vite + TypeScript + TailwindCSS + ShadCN + Zustand.
+- Multi-tenant:
+  - ALL business tables MUST include `tenant_id`.
+  - All queries MUST be tenant-scoped.
+- Migrations:
+  - ADDITIVE ONLY.
+  - NO DROP TABLE.
+  - NO DROP COLUMN.
+  - NO destructive ALTER.
+  - DO NOT modify the existing 001_initial migration destructively.
+  - Create NEW Alembic revisions for new tables (e.g. 002_core_domain, 003_kpi, etc.).
+- Security:
+  - Use JWT with HttpOnly + Secure cookies.
+  - Enforce RBAC on every protected endpoint.
+  - Use tenant isolation middleware.
+- AI:
+  - AI calls MUST NOT block HTTP handlers directly.
+  - For now, simple rule-based + optional OpenAI enhancement is sufficient.
+- Logging:
+  - Structured logging with timestamp, level, route, user_id, tenant_id when available.
+
+====================================================
+PHASE 3 – CORE DOMAIN: AUTH, TENANCY, RBAC, MODELS, APIs
+====================================================
+
+Objective:
+- Implement all main domain tables, authentication, RBAC, tenant isolation, and CRUD APIs.
+
+A) DATABASE MODELS & MIGRATIONS
+
+Create SQLAlchemy models and Alembic migrations for at least the following tables (all with `tenant_id`):
+
+1) departments
+   - id (UUID PK)
+   - tenant_id (UUID FK to tenants.id)
+   - name, code, is_active
+   - created_at, updated_at
+
+2) courses
+   - id (UUID PK)
+   - tenant_id
+   - code, name, description
+   - category, type
+   - validity_days (int)
+   - is_mandatory (bool)
+   - department_id (FK)
+   - created_at, updated_at
+
+3) enrollments
+   - id (UUID PK)
+   - tenant_id
+   - user_id (FK)
+   - course_id (FK)
+   - status: active/completed/failed/expired (use enums from core.enums)
+   - start_date, completion_date, expiry_date
+   - created_at, updated_at
+
+4) renewal_requests
+   - id (UUID PK)
+   - tenant_id
+   - user_id (FK – employee)
+   - enrollment_id (FK)
+   - status: pending/approved/rejected
+   - approver_id (FK – foreman/manager)
+   - requested_date, decided_date
+   - reason, decision_comment
+   - created_at, updated_at
+
+5) workflow_steps
+   - id (UUID PK)
+   - tenant_id
+   - renewal_id (FK)
+   - step_order (int)
+   - actor_role (foreman/manager/training_officer)
+   - status, acted_at, comment
+
+6) workflow_logs
+   - id (UUID PK)
+   - tenant_id
+   - entity_type (string)
+   - entity_id (UUID)
+   - action (string)
+   - actor_id (UUID)
+   - old_value, new_value (JSON/text)
+   - created_at
+
+7) progression_tasks
+   - id (UUID PK)
+   - tenant_id
+   - grade_code
+   - title, description
+   - is_mandatory (bool)
+   - created_at, updated_at
+
+8) employee_tasks
+   - id (UUID PK)
+   - tenant_id
+   - user_id (FK)
+   - task_id (FK to progression_tasks)
+   - status: not_started / in_progress / completed
+   - completed_at
+   - created_at, updated_at
+
+9) notifications
+   - id (UUID PK)
+   - tenant_id
+   - user_id (FK)
+   - type (expiry_warning, renewal_status, kpi_alert, etc.)
+   - title, message
+   - is_read (bool)
+   - created_at, read_at
+
+10) kpi_snapshots
+    - id (UUID PK)
+    - tenant_id
+    - user_id (FK) or department_id (FK) depending on level
+    - level (employee/foreman/manager/training_department)
+    - metric_name (string)
+    - metric_value (float)
+    - snapshot_date
+
+11) audit_logs
+    - id (UUID PK)
+    - tenant_id
+    - user_id (FK)
+    - action (string)
+    - entity (string)
+    - entity_id (UUID)
+    - details (JSON/text)
+    - created_at
+
+12) Optional: ai_recommendations (if needed)
+    - id, tenant_id, user_id, payload/json, created_at
+
+Create a NEW Alembic migration (e.g. `002_core_domain.py`) that creates all above tables using additive-only operations.
+
+B) AUTHENTICATION & TENANT ISOLATION
+
+Implement in backend:
+
+- Password hashing with bcrypt.
+- Auth service: `auth_service.py` with:
+  - `authenticate_user(email, password)`
+  - `create_access_token(data, expires_delta)`
+- Endpoints:
+  - `POST /api/auth/login`
+    - Accept email/password.
+    - Verify tenant + user.
+    - Return JWT in HttpOnly cookie.
+  - `POST /api/auth/logout`
+    - Clear cookie.
+  - `GET /api/auth/me`
+    - Return current user (id, email, role, tenant_id, department).
+
+Tenant Middleware:
+
+- Middleware or dependency that:
+  - Extracts user from token.
+  - Sets `request.state.tenant_id`.
+  - Ensures every DB query is filtered by tenant_id via service layer or explicit filters.
+
+RBAC:
+
+- Middleware/dependencies that:
+  - Enforce roles:
+    - employee
+    - foreman
+    - manager
+    - training_officer
+    - admin
+  - Provide decorators/Depends such as `require_role(["manager", "training_officer"])`.
+
+C) DOMAIN APIs (CRUD + WORKFLOWS)
+
+Implement functional endpoints in the existing router modules:
+
+1) Users:
+   - Admin-only CRUD for users within tenant.
+   - Assign roles and departments.
+
+2) Departments:
+   - Admin-only CRUD.
+
+3) Courses:
+   - Admin/Training Officer CRUD:
+     - Create/update/delete (soft-delete if needed).
+   - List with filters for employees.
+
+4) Enrollments:
+   - Training Officer/Admin:
+     - Assign course to user.
+   - Endpoint for current user:
+     - `/api/v1/enrollments/me` or via `my-enrollments` route.
+   - Automatically calculate expiry_date = completion_date + validity_days.
+
+5) Renewal Requests:
+   - Employee:
+     - Create renewal_request for an expired/expiring enrollment.
+   - Foreman/Manager:
+     - List pending approvals.
+     - Approve/Reject endpoints.
+   - Update workflow_steps and workflow_logs accordingly.
+
+6) Progression Tasks:
+   - Admin/Training Officer:
+     - CRUD for progression_tasks.
+   - Employees:
+     - View `/api/v1/tasks/my` to see their tasks and status.
+   - Endpoint to mark employee_task as completed.
+
+7) KPIs:
+   - `GET /api/v1/kpi/summary`:
+     - If role = Employee:
+       - training completion %, tasks completion %, expired course ratio.
+     - If Foreman/Manager:
+       - aggregated KPIs for their team.
+     - If Training Officer/Admin:
+       - department-level overview.
+   - Optionally write to kpi_snapshots or calculate on the fly.
+
+8) Notifications:
+   - `GET /api/v1/notifications`:
+     - List current user notifications.
+   - `PATCH /api/v1/notifications/{id}/read`
+   - `POST /api/v1/notifications/mark-all-read`
+
+9) Audit:
+   - Provide `GET /api/v1/audit` for Admin to view audit logs with filters.
+
+All write operations (create/update/approve/reject) MUST log into audit_logs.
+
+====================================================
+PHASE 4 – BACKGROUND JOBS: EXPIRY & NOTIFICATIONS
+====================================================
+
+Objective:
+- Automate course expiration detection and notifications.
+
+Implement an APScheduler-based job system (or as defined in blueprint) in `backend/app/jobs/`:
+
+Jobs:
+
+1) Daily Expiration Check Job:
+   - Runs once per day (use SCHEDULER_ENABLED env var to enable/disable).
+   - For each tenant:
+     - Find enrollments that:
+       - expire in 30/14/7/1 days
+       - already expired
+     - For each case:
+       - Create notifications for the employee.
+       - If ignored beyond certain time, escalate to foreman via notification.
+       - (Optional later: email via SendGrid – see Phase 5).
+
+2) KPI Snapshot Job (optional minimal version):
+   - Periodically compute KPI metrics and save into kpi_snapshots.
+
+Expose a simple `/api/health/detailed` that includes:
+- DB status.
+- Scheduler status (enabled/disabled).
+- Number of scheduled jobs.
+
+====================================================
+PHASE 5 – DEMO SEED DATA (TENANT + USERS + COURSES + ENROLLMENTS + RENEWALS + TASKS + KPIs)
+====================================================
+
+Objective:
+- Make the platform DEMO-READY with realistic multi-role data.
+
+Implement a protected admin endpoint, e.g.:
+
+`POST /api/v1/admin/seed-demo`
+
+Behavior:
+
+- Idempotent: if demo tenant already exists, do nothing (or log).
+- Otherwise:
+  - Create DEMO TENANT:
+    - name: "DemoCorp"
+  - Departments:
+    - "ERTMD"
+    - "TMSD"
+    - "JTMD"
+  - Users (within that tenant):
+    - 1 Admin
+    - 1 Training Officer
+    - 2 Managers
+    - 3 Foremen
+    - ~10 Employees
+  - Assign realistic roles and departments.
+
+  - Create courses:
+    - "Basic Safety Orientation"
+    - "Electrical Safety L2"
+    - "First Aid & CPR"
+    - "SCADA Fundamentals"
+    - "Cyber Security Awareness"
+    - with different validity_days values.
+
+  - Enroll employees into courses:
+    - Some completed
+    - Some active
+    - Some expiring within 30/14/7/1 days
+    - Some already expired
+
+  - Create progression_tasks for different grades.
+  - Create employee_tasks:
+    - Some completed, some in progress, some not started.
+
+  - Create renewal_requests:
+    - A mix of pending, approved, rejected.
+
+  - Optionally compute a few KPI snapshots so KPI dashboard shows meaningful data.
+
+Document in `replit.md`:
+
+- Seed endpoint path.
+- Demo users:
+  - roles and example usernames/emails (do NOT log raw passwords, but describe them in README in a safe format).
+
+====================================================
+PHASE 6 – FRONTEND: PAGES & FLOWS FOR AUTH + COURSES + RENEWALS + TASKS + KPIs
+====================================================
+
+Objective:
+- Make the frontend usable end-to-end for demo.
+
+Using the `frontend/` app (React + Vite + TS + Tailwind + ShadCN + Zustand), implement:
+
+1) Auth Flow:
+   - `/login` page:
+     - Form: email + password.
+     - Calls `/api/auth/login`.
+     - On success:
+       - Stores minimal auth state in Zustand (`currentUser`, `role`).
+       - Redirects to `/`.
+   - Global Axios interceptor to include credentials (cookies) and handle 401.
+
+2) Role-based Dashboard `/`:
+   - If Employee:
+     - Show:
+       - My training stats (from /kpi/summary).
+       - List of expiring courses.
+   - If Foreman/Manager:
+     - Show team KPIs (from /kpi/summary).
+     - Pending renewals approvals.
+   - If Training Officer/Admin:
+     - High-level compliance overview.
+
+3) Core Pages:
+   - `/my-courses`:
+     - Uses enrollments API to show current user’s courses + statuses.
+   - `/my-renewals`:
+     - List renewal_requests created by current user.
+     - Button to "request renewal" for expiring/expired courses.
+   - `/progression`:
+     - Shows employee_tasks and progression_tasks.
+   - `/approvals`:
+     - For Foreman/Manager:
+       - List pending renewal requests for their team.
+       - Approve/Reject actions.
+   - `/courses` (Training Officer/Admin):
+       - CRUD UI for courses.
+   - `/enrollments` (Training Officer/Admin):
+       - Assign courses to users and view enrollments.
+   - `/users` & `/departments` (Admin):
+       - Basic management screens.
+   - `/kpi-dashboard`:
+       - Show summary KPIs, use simple charts (Recharts per blueprint) if time allows.
+
+4) Notifications UI:
+   - A simple notifications dropdown or page:
+     - Hits `/api/v1/notifications`.
+     - Shows unread count.
+     - Allows marking notifications as read.
+
+Keep UI simple but clean and responsive, with basic loading and error states.
+
+====================================================
+CONSTRAINTS & FINAL CHECK
+====================================================
+
+- Do NOT modify existing initial migration destructively.
+- All new schema changes MUST be via new Alembic migrations – additive only.
+- All business tables MUST have tenant_id.
+- All queries MUST be tenant-scoped.
+- RBAC MUST protect all admin/management endpoints.
+- Logging MUST record key actions to audit_logs.
+
+When you finish implementing Phases 3, 4, 5, and 6:
+
+1) STOP.
+2) Provide a clear summary including:
+   - Which models & migrations were added.
+   - Which endpoints were implemented.
+   - How to:
+     - Run `alembic upgrade head`
+     - Start backend (`uvicorn ...`)
+     - Start frontend (`npm run dev`)
+     - Trigger demo seed
+   - Demo roles + example logins (without exposing real passwords in logs).
+
+Execute now.
