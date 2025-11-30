@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, ArrowLeft } from "lucide-react";
-import { getDefaultRouteForRole } from "@/utils/roleRoutes";
 
 interface LoginResponse {
   role: string;
@@ -45,13 +44,12 @@ export default function Login() {
         description: "You have been logged in successfully",
       });
 
-      // Redirect to role-based default route
-      const defaultRoute = getDefaultRouteForRole(user.role as any);
-      console.log("Login successful. User role:", user.role, "Redirecting to:", defaultRoute);
+      // Redirect to dashboard after successful login (all roles)
+      console.log("Login successful. User role:", user.role, "Redirecting to: /dashboard");
       
       // Use a small delay to ensure session cookie is set before navigation
       setTimeout(() => {
-        setLocation(defaultRoute);
+        setLocation("/dashboard");
       }, 300);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Network error";
