@@ -128,39 +128,49 @@ def run_demo_seed(db: Session) -> dict:
     db.flush()
     summary["courses"] = len(courses)
 
-    # 5. Create enrollments with varied statuses
+    # 5. Create enrollments with varied statuses - ENHANCED
     enrollments = []
     today = datetime.utcnow()
     
-    # For each employee, create enrollments
+    # For each employee, create 3-5 courses per employee
     employee_users = [u for u in users if u.role == UserRole.EMPLOYEE]
     
     for emp_idx, emp in enumerate(employee_users):
-        for course_idx, course in enumerate(courses[:5]):  # Enroll in first 5 courses
-            if emp_idx % 3 == 0 and course_idx == 0:
+        # Create 4 enrollments per employee to show diversity
+        for course_idx in range(min(4, len(courses))):
+            course = courses[course_idx]
+            
+            # Create varied expiry scenarios
+            if emp_idx % 5 == 0 and course_idx == 0:
                 # Expired enrollment
                 status = EnrollmentStatus.COMPLETED
                 start = today - timedelta(days=400)
                 completion = today - timedelta(days=50)
                 expiry = today - timedelta(days=10)
-            elif emp_idx % 3 == 1 and course_idx == 1:
-                # Expiring soon (7 days)
+            elif emp_idx % 5 == 1 and course_idx == 1:
+                # Expiring in 7 days
                 status = EnrollmentStatus.COMPLETED
                 start = today - timedelta(days=350)
                 completion = today - timedelta(days=100)
                 expiry = today + timedelta(days=7)
-            elif emp_idx % 3 == 2 and course_idx == 2:
+            elif emp_idx % 5 == 2 and course_idx == 2:
+                # Expiring in 14 days
+                status = EnrollmentStatus.COMPLETED
+                start = today - timedelta(days=340)
+                completion = today - timedelta(days=90)
+                expiry = today + timedelta(days=14)
+            elif emp_idx % 5 == 3 and course_idx == 3:
                 # Active/In-progress
                 status = EnrollmentStatus.ACTIVE
                 start = today - timedelta(days=30)
                 completion = None
                 expiry = today + timedelta(days=300)
             else:
-                # Various future expirations
+                # Various future expirations (30, 60, 90 days)
                 status = EnrollmentStatus.COMPLETED
-                start = today - timedelta(days=365 + (emp_idx * 50))
-                completion = today - timedelta(days=200 + (emp_idx * 20))
-                expiry = today + timedelta(days=100 + (emp_idx * 50) + course_idx * 30)
+                start = today - timedelta(days=365)
+                completion = today - timedelta(days=200)
+                expiry = today + timedelta(days=30 + (emp_idx % 3) * 30 + course_idx * 10)
             
             enrollment = Enrollment(
                 tenant_id=tenant.id,
@@ -177,18 +187,20 @@ def run_demo_seed(db: Session) -> dict:
     db.flush()
     summary["enrollments"] = len(enrollments)
 
-    # 6. Create renewal requests for expired/expiring enrollments
+    # 6. Create renewal requests for expired/expiring enrollments - ENHANCED
     renewals = []
-    for enr in enrollments[:8]:  # Create renewals for first 8
+    # Create renewals for expired and expiring soon enrollments
+    for idx, enr in enumerate(enrollments[:15]):  # Expand to 15 renewals for richer data
+        renewal_status = [RenewalStatus.PENDING, RenewalStatus.APPROVED, RenewalStatus.REJECTED][idx % 3]
         renewal = RenewalRequest(
             tenant_id=tenant.id,
             user_id=enr.user_id,
             enrollment_id=enr.id,
-            status=RenewalStatus.PENDING if enrollments.index(enr) % 3 == 0 else RenewalStatus.APPROVED,
-            requested_date=today - timedelta(days=5),
-            approver_id=None if enrollments.index(enr) % 3 == 0 else users[2].id,  # manager1
-            decided_date=None if enrollments.index(enr) % 3 == 0 else today - timedelta(days=2),
-            reason="Course expiration renewal"
+            status=renewal_status,
+            requested_date=today - timedelta(days=10 - (idx % 8)),
+            approver_id=None if renewal_status == RenewalStatus.PENDING else users[2].id,  # manager1
+            decided_date=None if renewal_status == RenewalStatus.PENDING else today - timedelta(days=3 + (idx % 3)),
+            reason="Course expiration renewal - " + ("Mandatory compliance" if idx % 2 == 0 else "Professional development")
         )
         db.add(renewal)
         renewals.append(renewal)
@@ -235,35 +247,68 @@ def run_demo_seed(db: Session) -> dict:
 
     db.flush()
 
-    # 9. Create notifications
+    # 9. Create notifications - ENHANCED
     notifications = []
-    for emp in employee_users[:5]:
-        notif = Notification(
-            tenant_id=tenant.id,
-            user_id=emp.id,
-            type="expiry_warning",
-            title="Course Expiration Alert",
-            message="Your 'Basic Safety Orientation' expires in 7 days",
-            is_read=False
-        )
-        db.add(notif)
-        notifications.append(notif)
+    for emp_idx, emp in enumerate(employee_users):
+        # Create multiple notifications per employee
+        notification_types = [
+            ("expiry_warning", "Course Expiration Alert", f"Your course expires in {7 + (emp_idx % 7)} days"),
+            ("renewal_approved", "Renewal Approved", "Your course renewal request has been approved"),
+            ("renewal_pending", "Renewal Pending", "Your renewal request is awaiting manager approval"),
+            ("task_reminder", "Task Reminder", "You have pending progression tasks"),
+        ]
+        
+        for not_idx, (notif_type, title, message) in enumerate(notification_types[:2]):  # 2 per employee
+            notif = Notification(
+                tenant_id=tenant.id,
+                user_id=emp.id,
+                type=notif_type,
+                title=title,
+                message=message,
+                is_read=not_idx > 0  # Mark some as read for realism
+            )
+            db.add(notif)
+            notifications.append(notif)
     
     db.flush()
     summary["notifications"] = len(notifications)
 
-    # 10. Create KPI snapshots
+    # 10. Create KPI snapshots - ENHANCED
     kpis = []
     kpi_metrics = ["training_completion_rate", "expired_course_ratio", "task_completion_rate", "promotion_readiness_score"]
     
-    for emp in employee_users[:3]:
+    # Create KPIs for all employees AND departments
+    for emp in employee_users:
         for metric in kpi_metrics:
+            # Vary values by metric type
+            if metric == "training_completion_rate":
+                value = 80.0 + (hash(emp.id.hex) % 200) / 100
+            elif metric == "expired_course_ratio":
+                value = (hash(emp.id.hex) % 300) / 100  # 0-30%
+            elif metric == "task_completion_rate":
+                value = 70.0 + (hash(emp.id.hex) % 300) / 100
+            else:  # promotion_readiness_score
+                value = 60.0 + (hash(emp.id.hex) % 400) / 100
+            
             kpi = KPISnapshot(
                 tenant_id=tenant.id,
                 user_id=emp.id,
                 level="employee",
                 metric_name=metric,
-                metric_value=85.0 + (hash(emp.id.hex + metric) % 150) / 100  # Random 85-100
+                metric_value=min(100.0, max(0.0, value))
+            )
+            db.add(kpi)
+            kpis.append(kpi)
+    
+    # Add department-level KPIs
+    for dept in departments:
+        for metric in kpi_metrics:
+            kpi = KPISnapshot(
+                tenant_id=tenant.id,
+                user_id=None,
+                level="department",
+                metric_name=metric,
+                metric_value=75.0 + (hash(dept.id.hex + metric) % 200) / 100
             )
             db.add(kpi)
             kpis.append(kpi)
