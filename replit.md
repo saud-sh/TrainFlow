@@ -21,6 +21,57 @@ The project aims to provide a robust, scalable solution for workforce developmen
 *   Do not make changes to the folder Z.
 *   Do not make changes to the file Y.
 
+## Recent Completions (Latest Session)
+
+### Phase 1: Enterprise Landing Page (COMPLETED)
+- Bilingual i18n system (English/Arabic) with language toggle
+- 10 landing page components (Hero, Features, Workflow, AI, Security, KPIs, Integrations, Enterprise, FAQ, Footer)
+- Full RTL/LTR layout switching via LanguageProvider
+- Landing page accessible at `/` for unauthenticated users
+
+### Phase 2: Email + Password Authentication (COMPLETED)
+- Login page with email/password form (`client/src/pages/login.tsx`)
+- Updated useAuth hook to call backend `/api/v1/users/me` endpoint
+- HttpOnly cookie-based JWT sessions
+- Demo credentials displayed on login page for easy testing
+- Auth flow: Landing → Login → Dashboard
+
+### Phase 3: Role-Based Routing & Navigation Guards (COMPLETED - THIS SESSION)
+**Files Created:**
+- `client/src/utils/roleRoutes.ts` - Role-to-route mapping and validation
+- `client/src/components/routing/ProtectedRoute.tsx` - Route protection wrapper with 403 handling
+
+**Files Updated:**
+- `client/src/hooks/useAuth.ts` - Enhanced with login/logout methods and cache management
+- `client/src/pages/login.tsx` - Redirects to role-based default route post-login
+- `client/src/App.tsx` - All routes wrapped with ProtectedRoute; proper role-based access control
+- `client/src/components/app-sidebar.tsx` - Fixed property names (first_name/last_name), logout functionality
+
+**Role-Based Default Routes (Post-Login):**
+- Administrator → `/users` (User Management)
+- Training Officer → `/courses` (Course Management)
+- Manager → `/kpi-dashboard` (Analytics)
+- Foreman → `/approvals` (Team Approvals)
+- Employee → `/dashboard` (Personal Dashboard)
+
+**Access Control:**
+- Employees can access: dashboard, my courses, my renewals, progression, recommendations, grade readiness, KPI dashboard
+- Foremen get employee routes + approvals, team overview, reports
+- Managers get foreman routes + all renewals
+- Training Officers get: courses, enrollments, all renewals, reports, KPI dashboard
+- Administrators get all routes
+
+**Acceptance Criteria - ALL MET:**
+✅ Login redirects by role to correct dashboard
+✅ All sidebar menu routes work without 404
+✅ Unauthenticated users redirected to /login
+✅ Authenticated users cannot access /login
+✅ Landing page remains public
+✅ Protected routes blocked without authorization
+✅ 403 error page shown for unauthorized access
+✅ Logout clears session and returns to landing page
+✅ No backend breaking changes (uses existing endpoints)
+
 ## System Architecture
 
 TrainFlow is built as a **Modular Monolith** using **Clean Architecture** principles. It features a **multi-tenant design** with `tenant_id` on all business tables and middleware-enforced isolation. The system is divided into 18 distinct Bounded Contexts.
