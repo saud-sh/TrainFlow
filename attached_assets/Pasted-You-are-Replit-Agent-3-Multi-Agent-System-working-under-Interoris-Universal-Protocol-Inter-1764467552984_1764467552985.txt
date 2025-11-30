@@ -1,0 +1,218 @@
+You are Replit Agent 3 (Multi-Agent System) working under:
+
+- Interoris Universal Protocol  
+- Interoris Phase Execution Protocol  
+- Rock Technology CTO Project Protocol  
+
+You must reset your assumptions and rebuild the project architecture from scratch using the CORRECT TECHNOLOGY STACK and correct enterprise rules.
+
+============================================================
+CORE REQUIREMENTS
+============================================================
+
+You are building **TrainFlow – Enterprise Training, Renewal & Progression Platform**.
+This system MUST follow EXACTLY this architecture:
+
+Backend:
+- Python
+- FastAPI
+- SQLAlchemy ORM
+- APScheduler or async background loop
+- Clean Architecture (Core Domain → Application → Infrastructure → API → UI router)
+- Modular Monolith (bounded contexts for: Users, Courses, Enrollment, Renewal Workflow, KPI Engine, Task Engine, Notifications, AI Engine, Audit, Integrations)
+
+Frontend:
+- React
+- Vite
+- TypeScript
+- Zustand (state slices)
+- TailwindCSS
+- ShadCN UI
+- React Router
+- Axios
+
+Database:
+- SQLite for development
+- PostgreSQL for production
+- Multi-tenant with `tenant_id` (UUID) on ALL business tables
+- STRICT additive-only migrations (NO drops, NO destructive changes)
+
+AI:
+- Background jobs ONLY
+- No AI logic inside HTTP request handlers
+- Tables for AI input & output
+- Pipelines for recommendations & grade predictions
+
+External Integrations (MANDATORY):
+- FULL Integration Engine supporting:
+  - SAP HR / Oracle HCM data import/export
+  - LMS integrations (import course completion)
+  - External database connectors (PostgreSQL/MySQL/SQLServer)
+  - File-based import (Excel/CSV)
+- Integration features:
+  - Per-tenant connection configs
+  - Encrypted credentials
+  - Staging tables
+  - Mapping layer
+  - Background sync jobs
+  - “Test connection” endpoint
+
+Security:
+- Secure sessions or JWT in HttpOnly + Secure cookies
+- RBAC enforced on ALL endpoints and pages
+- Tenant isolation middleware
+- CSP + HSTS + XFO + X-Content-Type-Options
+- Rate limiting for login
+- HTML error pages: 403, 404, 500
+
+============================================================
+ABSOLUTE RULES (DO NOT VIOLATE)
+============================================================
+- NO Node.js
+- NO Express.js
+- NO Drizzle ORM
+- NO Prisma
+- NO TypeScript backend
+- Backend MUST be Python + FastAPI ONLY
+- NO destructive migrations (no DROP/ALTER DROP/CASCADE)
+- ALL business tables MUST include tenant_id
+- ALL APIs tenant-scoped
+- AI MUST NOT run inside HTTP requests
+- MUST use Design Mode for dashboards, workflows, UI maps
+- MUST start with Blueprint before any code
+
+============================================================
+YOUR FIRST TASK (PHASE 1 ONLY)
+============================================================
+
+We are now in **PHASE 1 – SYSTEM BLUEPRINT**.
+
+Do NOT generate code.
+
+Generate ONLY the following documentation in `replit.md`:
+
+1. **Full File/Folder Structure**
+   - backend/ (FastAPI modular monolith)
+   - frontend/ (React/Vite)
+   - integrations/
+   - ai/
+   - jobs/
+   - common/
+   - docs/
+
+2. **Database Schema (ERD)**
+   - tenants
+   - users
+   - departments
+   - courses
+   - enrollments
+   - progression_tasks
+   - employee_tasks
+   - renewal_requests
+   - workflow_steps
+   - workflow_logs
+   - notifications
+   - kpi_snapshots
+   - ai_inputs
+   - ai_outputs
+   - audit_logs
+   - integration_systems
+   - integration_connections
+   - integration_credentials
+   - staging tables (stg_employees, stg_departments, stg_courses, stg_enrollments)
+   - sync_logs
+
+3. **Role Matrix**
+   - Employee
+   - Foreman
+   - Manager
+   - Training Officer
+   - Administrator
+
+4. **Backend Routing Map**
+   - /auth
+   - /users
+   - /departments
+   - /courses
+   - /enrollments
+   - /renewals
+   - /workflow
+   - /tasks
+   - /kpi
+   - /notifications
+   - /ai
+   - /audit
+   - /reports
+   - /integrations
+
+5. **Frontend Page Map**
+   EXACTLY as follows:
+   - Dashboard (/)
+   - My Courses (/my-courses)
+   - My Renewals (/my-renewals)
+   - Progression Tasks (/progression)
+   - AI Recommendations (/recommendations)
+   - Grade Readiness (/grade-readiness)
+   - Team Approvals (/approvals)
+   - Team Overview (/team)
+   - Course Management (/courses)
+   - Enrollments (/enrollments)
+   - All Renewals (/all-renewals)
+   - User Management (/users)
+   - Departments (/departments)
+   - Audit Logs (/audit-logs)
+   - Integrations (/integrations)
+   - Reports (/reports)
+   - KPI Dashboard (/kpi-dashboard)
+   - Error pages (403, 404, 500)
+
+6. **API Endpoints**
+   - Rewrite ALL endpoints using FastAPI (NOT Express.js)
+   - Ensure tenant_id + RBAC enforcement
+
+7. **Background Jobs**
+   - Course expiration check
+   - Renewal escalation
+   - KPI aggregation
+   - AI compute jobs
+   - Integration sync jobs (SAP/Oracle/LMS/DB)
+
+8. **Integration Engine Blueprint**
+   - Staging → Mapping → Merge
+   - Config tables
+   - Sync job design
+   - Health checks
+
+9. **AI Pipeline Blueprint**
+   - Recommendations
+   - Grade readiness scoring
+   - Skill-gap detection
+
+10. **Observability**
+    - Structured logging
+    - Metrics
+    - Health endpoints
+
+11. **Phase Plan**
+    - Phase A: Auth & Tenancy
+    - Phase B: Core CRUD
+    - Phase C: Renewal Workflow
+    - Phase D: Tasks & KPIs
+    - Phase E: Integrations Engine
+    - Phase F: AI Pipelines
+    - Phase G: Reports
+    - Phase H: Security Hardening
+    - Phase I: Enterprise Add-ons (SSO, SCORM, ISO, Skill Passport)
+
+============================================================
+WHEN YOU FINISH PHASE 1
+============================================================
+
+Stop.
+
+Show me:
+- The Blueprint
+- The Phase Plan
+- Any assumptions
+
+Do NOT generate code until I explicitly approve moving to Phase 2.
