@@ -62,3 +62,81 @@ TrainFlow is built as a **Modular Monolith** using **Clean Architecture** princi
 *   **Database Connectors (Integrations):** PostgreSQL, MySQL, SQL Server
 *   **File-Based Integrations:** Excel, CSV
 *   **Background Task Scheduler:** APScheduler
+
+## Demo Mode
+
+To explore TrainFlow with pre-configured data, use the demo tenant:
+
+### Demo Tenant
+- **Slug:** `democorp`
+- **Name:** DemoCorp
+
+### Demo Login Accounts
+
+All demo users have the password: `TrainFlow123!`
+
+| Email | Role | Department |
+|-------|------|-----------|
+| admin@democorp.local | Administrator | N/A |
+| training.officer@democorp.local | Training Officer | ERTMD |
+| manager1@democorp.local | Manager | ERTMD |
+| foreman1@democorp.local | Foreman | ERTMD |
+| employee1@democorp.local | Employee | ERTMD |
+
+### How to Create Demo Data
+
+1. **Login as Admin:**
+   ```
+   POST /api/v1/users/login
+   {
+     "email": "admin@democorp.local",
+     "password": "TrainFlow123!"
+   }
+   ```
+
+2. **Trigger Demo Seed (Admin Only):**
+   ```
+   POST /api/v1/users/seed-demo
+   Authorization: Bearer <JWT_TOKEN>
+   ```
+
+3. **Response includes:**
+   ```json
+   {
+     "tenant": 1,
+     "departments": 3,
+     "users": 15,
+     "courses": 7,
+     "enrollments": 30+,
+     "renewals": 8,
+     "tasks": 12,
+     "notifications": 5,
+     "kpis": 12,
+     "message": "Demo seed completed successfully"
+   }
+   ```
+
+### What the Demo Seed Creates
+
+**Organizational Structure:**
+- 3 Departments: ERTMD, TMSD, JTMD
+- 15 Users across all roles (Admin, Training Officer, 2 Managers, 3 Foremen, 8 Employees)
+
+**Training Data:**
+- 7 Courses with varying validity periods (365-730 days)
+- 30+ Enrollments with mixed statuses (completed, active, expired, expiring soon)
+- 8 Renewal Requests showing the complete approval workflow
+- Enrollments expiring at different intervals (1, 7, 14, 30 days) for testing alerts
+
+**Progression & Development:**
+- 12 Progression Tasks across 3 grade levels (G5, G6, G7)
+- 18 Employee Tasks with different completion statuses
+- 5 Sample Notifications for expiry warnings
+
+**Analytics:**
+- 12 KPI Snapshots across employee, team, and department levels
+- Sample metrics: training completion rate, expiration ratio, task completion rate, promotion readiness
+
+### Idempotency
+
+The demo seed is **idempotent** — calling it multiple times is safe and will not create duplicates. If the `democorp` tenant already exists, the function returns immediately without creating additional data.
