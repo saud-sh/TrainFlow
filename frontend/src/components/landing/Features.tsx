@@ -11,6 +11,8 @@ import {
   Shield,
   Package,
   Workflow,
+  Database,
+  AlertTriangle,
 } from "lucide-react";
 import type { Language } from "@/i18n";
 import { languages } from "@/i18n";
@@ -30,6 +32,8 @@ const icons = [
   Shield,
   Package,
   Workflow,
+  Database,
+  AlertTriangle,
 ];
 
 export function Features({ language }: FeaturesProps) {
@@ -73,7 +77,7 @@ export function Features({ language }: FeaturesProps) {
           initial="hidden"
           whileInView="show"
           viewport={{ once: true }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6"
         >
           {t.features.modules.map((module, idx) => {
             const Icon = icons[idx % icons.length];

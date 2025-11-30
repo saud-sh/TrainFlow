@@ -27,7 +27,7 @@ export function Workflow({ language }: WorkflowProps) {
         </motion.div>
 
         <div className="relative">
-          <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4">
             {t.workflow.steps.map((step, idx) => (
               <motion.div
                 key={idx}

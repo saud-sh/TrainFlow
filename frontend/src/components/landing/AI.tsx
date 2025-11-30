@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
-import { Brain, Lightbulb, Zap, TrendingUp } from "lucide-react";
+import { Brain, Lightbulb, Zap, TrendingUp, CheckCircle2 } from "lucide-react";
 import type { Language } from "@/i18n";
 import { languages } from "@/i18n";
 
@@ -8,7 +8,7 @@ interface AIProps {
   language: Language;
 }
 
-const icons = [Brain, TrendingUp, Lightbulb, Zap];
+const icons = [Brain, TrendingUp, Lightbulb, Zap, CheckCircle2];
 
 export function AI({ language }: AIProps) {
   const t = languages[language];
@@ -28,7 +28,7 @@ export function AI({ language }: AIProps) {
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           {t.ai.features.map((feature, idx) => {
             const Icon = icons[idx % icons.length];
             return (
