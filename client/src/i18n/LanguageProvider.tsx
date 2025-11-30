@@ -42,7 +42,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 export function useLanguage(): LanguageContextType {
   const context = useContext(LanguageContext);
   if (!context) {
-    throw new Error("useLanguage must be used within LanguageProvider");
+    // Return a safe default instead of throwing
+    return {
+      language: "en",
+      setLanguage: () => {},
+      toggleLanguage: () => {},
+    };
   }
   return context;
 }
