@@ -1,0 +1,276 @@
+We are now in Phase I – Demo Data & Scenario Enrichment for the TrainFlow project.
+
+Context (DO NOT CHANGE)
+
+Backend: Python + FastAPI, SQLAlchemy, Alembic, APScheduler.
+
+Frontend: React/TypeScript in the client/ folder (this is the active frontend).
+
+Architecture: Modular monolith, clean architecture, DDD bounded contexts.
+
+Multi-tenant: Every business table has tenant_id. Multi-tenant isolation is mandatory.
+
+Auth: Existing Replit Auth integration + JWT for backend APIs.
+
+Existing demo seed:
+
+File: backend/app/seeds/demo_seed.py
+
+Endpoint: POST /api/v1/users/seed-demo (admin-only, idempotent).
+
+Currently creates ONE demo tenant with a small set of users/courses/enrollments.
+
+IMPORTANT RULES (Interoris Protocol):
+
+NO destructive migrations:
+
+❌ No DROP TABLE, DROP COLUMN, ALTER ... DROP, or CASCADE schema changes.
+
+Schema is FROZEN for this phase:
+
+✅ You may ONLY add or update seed data logic.
+
+❌ Do NOT change models or Alembic migrations.
+
+Seed must be:
+
+Idempotent (safe to call many times).
+
+Multi-tenant aware (always filter by tenant_id and demo slugs).
+
+Non-destructive (never delete/truncate production data).
+
+Phase Objective
+
+Goal: Enrich the demo environment with realistic, dense data across ALL major tables so that:
+
+Dashboards (for all roles) look full and meaningful.
+
+Renewal workflows, approvals, KPIs and AI features can be demonstrated end-to-end.
+
+Admin can see a realistic organization with multiple departments, roles and courses.
+
+We are NOT changing architecture or schema. Only demo data.
+
+Scope (Included)
+
+Extend demo_seed.py to create:
+
+Tenants
+
+2 demo tenants total:
+
+DemoCorp (slug: democorp) – main tenant used in docs.
+
+GulfEnergy (slug: gulfenergy) – secondary tenant to show multi-tenancy.
+
+Departments per tenant
+
+DemoCorp: at least 5 departments
+(e.g. ERTMD, TMSD, JTMD, Operations, HSE).
+
+GulfEnergy: at least 3 departments
+(e.g. Refining, Power Generation, Corporate Services).
+
+Users per tenant
+
+DemoCorp: ~30 users
+
+2 Administrators
+
+2 Training Officers
+
+4 Managers
+
+6 Foremen
+
+16 Employees
+
+GulfEnergy: ~15 users
+
+1 Administrator
+
+1 Training Officer
+
+3 Managers
+
+4 Foremen
+
+6 Employees
+
+Use realistic Arabic/English-style names and job titles.
+
+Keep at least one documented admin:
+admin@democorp.local / TrainFlow123! (must remain as in replit.md).
+
+Courses
+
+At least 15 courses per tenant:
+
+Mix of: safety, technical, leadership, IT, compliance.
+
+Include fields: validity in months, mandatory flag, department scoping.
+
+Have a realistic spread of validity: 6, 12, 24, 36 months.
+
+Enrollments
+
+At least 80 enrollments for DemoCorp and 40 for GulfEnergy.
+
+Status mix:
+
+completed
+
+active
+
+failed
+
+expired
+
+expiring_soon (within 30 days)
+
+Ensure every user has a combination of completed and upcoming courses.
+
+Renewal Requests
+
+At least 20 renewal_requests for DemoCorp:
+
+Some in pending with different approvers.
+
+Some approved and linked to upcoming courses.
+
+Some rejected with comments.
+
+Populate approval chain (employee → foreman → manager).
+
+Progression / Tasks Engine
+
+Populate grade levels G4–G8.
+
+Create promotion tasks per grade (e.g. “Lead toolbox talk”, “Complete HSE Level 2”).
+
+Assign at least 40 task instances across employees with mixed completion states.
+
+KPI Snapshots
+
+Seed KPI data so that:
+
+Employee dashboards show non-zero percentages.
+
+Foreman/team dashboards can show variations between team members.
+
+Manager/department KPIs show different compliance levels per department.
+
+Notifications
+
+Seed at least 30 notifications:
+
+Course expiring soon.
+
+Renewal request approved/rejected.
+
+New course assigned.
+
+Audit Logs
+
+Generate sample audit trail entries covering:
+
+User login
+
+Course enrollment
+
+Renewal submission/approval/rejection
+
+Admin CRUD actions on users/courses
+
+AI-Related Tables (if already present in schema)
+
+ai_recommendations: Insert a handful of sample recommendations per role.
+
+skill_graph / skill_nodes / skill_links (whatever names the blueprint used):
+
+Seed a basic skill graph: safety, technical, leadership, soft skills.
+
+career_path_predictions / similar: few records to demonstrate Career Path AI.
+
+Idempotency & Safety
+
+seed_demo() must:
+
+Look up tenants by slug.
+
+Only create missing demo records (or update if needed).
+
+NEVER truncate or hard delete tables.
+
+If demo data already exists, the function should:
+
+Reuse existing tenants/users/courses when possible.
+
+Add missing pieces (e.g., new course or KPI snapshot) safely.
+
+Documentation Update
+
+Update replit.md:
+
+Document ALL main demo logins (at least 1 per role per tenant).
+
+Briefly describe the demo scenarios:
+
+“Manager with pending approvals”
+
+“Foreman with several expiring courses in team”
+
+“Employee close to promotion readiness”
+
+Confirm that POST /api/v1/users/seed-demo can be called multiple times without breaking anything.
+
+Out of Scope (DO NOT TOUCH)
+
+❌ No schema/model changes.
+
+❌ No changes to auth flow or Replit Auth integration.
+
+❌ No removal or renaming of existing endpoints.
+
+❌ No destructive SQL or Alembic migrations.
+
+❌ No new frontend pages in this phase.
+
+Acceptance Criteria
+
+Calling POST /api/v1/users/seed-demo as admin:
+
+Does NOT raise errors on repeated calls.
+
+Creates (or preserves) 2 tenants with the structures described above.
+
+Populates all major tables with realistic volumes and statuses.
+
+Admin dashboards show:
+
+Multiple departments with different KPI values.
+
+Multiple users per role and tenant.
+
+Non-empty renewals, tasks, KPIs, notifications, audit logs.
+
+Employee/Foreman/Manager demos (using accounts documented in replit.md) show:
+
+Meaningful cards and tables (not empty).
+
+Some pending approvals, some completed tasks, some AI recommendations (where applicable).
+
+replit.md clearly documents:
+
+Demo tenants, demo accounts, default password.
+
+How to trigger the demo seeding safely.
+
+Please:
+
+Implement the enriched seed data in backend/app/seeds/demo_seed.py.
+
+Ensure all changes are additive, idempotent, and safe.
+
+Run any necessary checks/tests to confirm there are no runtime errors after seeding.
