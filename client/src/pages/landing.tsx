@@ -10,7 +10,14 @@ import { Integrations } from "@/components/landing/Integrations";
 import { Enterprise } from "@/components/landing/Enterprise";
 import { FAQ } from "@/components/landing/FAQ";
 import { Footer } from "@/components/landing/Footer";
-import { LanguageSwitcher } from "@/components/landing/LanguageSwitcher";
+import { Suspense } from "react";
+import dynamic from "next/dynamic";
+
+// Dynamically import LanguageSwitcher with fallback
+const LanguageSwitcher = dynamic(
+  () => import("@/components/landing/LanguageSwitcher").then(mod => ({ default: mod.LanguageSwitcher })),
+  { ssr: false, loading: () => null }
+);
 
 export default function Landing() {
   return (
@@ -22,7 +29,9 @@ export default function Landing() {
             TrainFlow
           </div>
           <div className="flex items-center gap-4">
-            <LanguageSwitcher />
+            <Suspense fallback={null}>
+              <LanguageSwitcher />
+            </Suspense>
           </div>
         </div>
       </nav>
