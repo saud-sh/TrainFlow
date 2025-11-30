@@ -10,6 +10,11 @@ from backend.app.core.config import settings
 from backend.app.db import get_db, engine, Base
 from backend.app.middleware.security import SecurityHeadersMiddleware, LoggingMiddleware
 
+# Import routers
+from backend.app.api.v1 import users, departments, courses, enrollments, renewals, tasks
+from backend.app.api.v1 import kpi, notifications, ai, integrations, audit, scorm
+from backend.app.api.v1 import security_awareness, skills, career
+
 # Create tables
 Base.metadata.create_all(bind=engine)
 
@@ -58,82 +63,22 @@ async def health_check_detailed(db: Session = Depends(get_db)):
         "timestamp": datetime.utcnow().isoformat()
     }
 
-# Placeholder routes for all bounded contexts
-@app.get("/api/v1/users")
-async def list_users():
-    return {"message": "Users endpoint - not implemented yet"}
-
-@app.get("/api/v1/auth/me")
-async def get_current_user():
-    return {"message": "Auth endpoint - not implemented yet"}
-
-@app.post("/api/v1/auth/login")
-async def login():
-    return {"message": "Login endpoint - not implemented yet"}
-
-@app.post("/api/v1/auth/logout")
-async def logout():
-    return {"message": "Logout endpoint - not implemented yet"}
-
-@app.get("/api/v1/departments")
-async def list_departments():
-    return {"message": "Departments endpoint - not implemented yet"}
-
-@app.get("/api/v1/courses")
-async def list_courses():
-    return {"message": "Courses endpoint - not implemented yet"}
-
-@app.get("/api/v1/enrollments")
-async def list_enrollments():
-    return {"message": "Enrollments endpoint - not implemented yet"}
-
-@app.get("/api/v1/renewals")
-async def list_renewals():
-    return {"message": "Renewals endpoint - not implemented yet"}
-
-@app.get("/api/v1/tasks")
-async def list_tasks():
-    return {"message": "Tasks endpoint - not implemented yet"}
-
-@app.get("/api/v1/kpi/summary")
-async def get_kpi_summary():
-    return {"message": "KPI endpoint - not implemented yet"}
-
-@app.get("/api/v1/ai/recommendations")
-async def get_recommendations():
-    return {"message": "AI recommendations - not implemented yet"}
-
-@app.get("/api/v1/ai/grade-readiness")
-async def get_grade_readiness():
-    return {"message": "Grade readiness - not implemented yet"}
-
-@app.get("/api/v1/notifications")
-async def list_notifications():
-    return {"message": "Notifications endpoint - not implemented yet"}
-
-@app.get("/api/v1/audit")
-async def list_audit_logs():
-    return {"message": "Audit endpoint - not implemented yet"}
-
-@app.get("/api/v1/integrations")
-async def list_integrations():
-    return {"message": "Integrations endpoint - not implemented yet"}
-
-@app.get("/api/v1/scorm")
-async def list_scorm():
-    return {"message": "SCORM endpoint - not implemented yet"}
-
-@app.get("/api/v1/security-awareness")
-async def list_security():
-    return {"message": "Security Awareness endpoint - not implemented yet"}
-
-@app.get("/api/v1/skills")
-async def list_skills():
-    return {"message": "Skills endpoint - not implemented yet"}
-
-@app.get("/api/v1/career")
-async def list_career():
-    return {"message": "Career endpoint - not implemented yet"}
+# Register routers
+app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+app.include_router(departments.router, prefix="/api/v1/departments", tags=["departments"])
+app.include_router(courses.router, prefix="/api/v1/courses", tags=["courses"])
+app.include_router(enrollments.router, prefix="/api/v1/enrollments", tags=["enrollments"])
+app.include_router(renewals.router, prefix="/api/v1/renewals", tags=["renewals"])
+app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
+app.include_router(kpi.router, prefix="/api/v1/kpi", tags=["kpi"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
+app.include_router(ai.router, prefix="/api/v1/ai", tags=["ai"])
+app.include_router(integrations.router, prefix="/api/v1/integrations", tags=["integrations"])
+app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
+app.include_router(scorm.router, prefix="/api/v1/scorm", tags=["scorm"])
+app.include_router(security_awareness.router, prefix="/api/v1/security-awareness", tags=["security_awareness"])
+app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"])
+app.include_router(career.router, prefix="/api/v1/career", tags=["career"])
 
 if __name__ == "__main__":
     import uvicorn

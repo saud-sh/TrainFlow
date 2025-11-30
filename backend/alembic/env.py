@@ -7,7 +7,7 @@ import sys
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from backend.app.db import Base
+from backend.app.db.database import Base
 from backend.app.core.config import settings
 
 config = context.config
