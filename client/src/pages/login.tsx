@@ -4,20 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { GraduationCap, ArrowLeft } from "lucide-react";
-
-interface LoginResponse {
-  role: string;
-  email: string;
-}
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { login, isAuthenticated } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // If already authenticated, redirect to dashboard
+  if (isAuthenticated) {
+    setLocation("/dashboard");
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,32 +28,17 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("/api/v1/users/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Login failed");
-      }
-
-      const user = (await res.json()) as LoginResponse;
+      // Use the useAuth login method which handles auth state update + refetch
+      await login(email, password);
 
       toast({
         title: "Welcome",
         description: "You have been logged in successfully",
       });
 
-      // Redirect to dashboard after successful login (all roles)
-      console.log("Login successful. User role:", user.role, "Redirecting to: /dashboard");
-      
-      // Use a small delay to ensure session cookie is set before navigation
-      setTimeout(() => {
-        setLocation("/dashboard");
-      }, 300);
+      // Redirect to dashboard - auth state is now updated
+      console.log("Login successful. Redirecting to: /dashboard");
+      setLocation("/dashboard");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Network error";
       setError(message);

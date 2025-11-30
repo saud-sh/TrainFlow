@@ -1,0 +1,435 @@
+You are working on the TrainFlow project (Enterprise Training Platform).
+The system is almost complete, but there is a remaining BUG in the login + routing flow.
+⚠️ IMPORTANT CONSTRAINTS
+
+
+DO NOT change the database schema.
+
+
+DO NOT touch any backend auth logic unless there is a clear bug.
+
+
+DO NOT modify seed data, jobs, AI, or any backend modules.
+
+
+DO NOT refactor the whole router or redesign the app.
+
+
+Only fix the authentication flow + React Router routing so that the behavior matches the expected flow below.
+
+
+
+1) CURRENT BUG (what I see in production)
+Environment: https://training.rocktech.sa
+
+
+I open /login, enter:
+
+
+email: admin@democorp.local
+
+
+password: TrainFlow123!
+
+
+
+
+Login succeeds and I see the toast “You have been logged in successfully”.
+
+
+The URL becomes /dashboard BUT:
+
+
+I still see the public landing hero (blue gradient, big title “AI-Powered Training, Renewal & Talent Intelligence Platform”).
+
+
+There is no sidebar, no dashboard cards, no navigation like “My Courses / My Renewals / KPI Dashboard”.
+
+
+
+
+So right now:
+
+
+The URL = /dashboard
+
+
+The rendered page = Landing (unauthenticated layout)
+
+
+Sidebar + dashboard layout are NOT shown.
+
+
+This means the auth state / routing guard is not synchronized.
+
+2) EXPECTED BEHAVIOR
+Please implement and verify the following final behavior:
+PUBLIC (unauthenticated) behavior
+
+
+/
+
+
+Shows the public Landing page (hero, features, etc.).
+
+
+If the user is ALREADY logged in, you may optionally redirect / → /dashboard.
+
+
+
+
+/login
+
+
+Shows the email/password login form (already exists).
+
+
+If login is successful:
+
+
+Session cookie is set.
+
+
+Frontend auth state is updated.
+
+
+User is redirected to /dashboard.
+
+
+
+
+If the user is already logged in and opens /login, redirect them to /dashboard.
+
+
+
+
+PRIVATE (authenticated) behavior
+
+
+/dashboard
+
+
+MUST show the real dashboard layout:
+
+
+Sidebar (TrainFlow logo, navigation items)
+
+
+“Good morning / evening, <name>”
+
+
+Cards (Active Courses, Completed, Expiring Soon, Pending Actions, etc.)
+
+
+
+
+This route is protected:
+
+
+If NOT authenticated → redirect to /login (or /) with no flash of the landing page.
+
+
+
+
+
+
+Other protected routes (examples):
+
+
+/my-courses, /my-renewals, /progression, /approvals, /team, /users, /departments, /kpi-dashboard, etc.
+
+
+All of these routes must:
+
+
+Be wrapped in the same ProtectedRoute (or equivalent) component.
+
+
+Only render when isAuthenticated === true.
+
+
+Redirect to /login when not authenticated.
+
+
+
+
+The sidebar menu should be filtered by role (admin, manager, foreman, employee) EXACTLY as it currently is.
+Do NOT change the RBAC logic, just make sure the router uses it correctly.
+
+
+
+
+
+3) WHAT YOU MUST CHECK & FIX
+A) Backend – VERIFY ONLY (no redesign)
+
+
+Check that:
+
+
+POST /api/v1/users/login:
+
+
+Validates email/password.
+
+
+Sets an HttpOnly session or JWT cookie.
+
+
+Returns user info (id, email, role, firstName, lastName, etc.).
+
+
+
+
+GET /api/v1/users/me:
+
+
+Uses the auth middleware.
+
+
+Returns the currently authenticated user in the same shape.
+
+
+
+
+
+
+Only fix if there is a clear bug (e.g., /me not using the cookie, wrong field names, etc.).
+
+
+Do NOT:
+
+
+Change table structure.
+
+
+Change password hashing.
+
+
+Add new auth strategies.
+
+
+Add or remove endpoints beyond what is needed for /me.
+
+
+B) Frontend – AUTH HOOK
+File to inspect:
+
+
+client/src/hooks/useAuth.ts (or equivalent)
+
+
+Requirements:
+
+
+useAuth() must clearly handle three states:
+
+
+loading: true while calling /api/v1/users/me
+
+
+isAuthenticated: true/false
+
+
+user: User | null
+
+
+
+
+On app load:
+
+
+Call /api/v1/users/me ONE time to check session.
+
+
+While loading: show a small loader or nothing, but don’t redirect yet.
+
+
+
+
+After successful login:
+
+
+login() should:
+
+
+Call the login endpoint.
+
+
+Wait for it to succeed.
+
+
+Then refetch /api/v1/users/me and update user and isAuthenticated.
+
+
+
+
+Only after isAuthenticated === true should the app allow access to protected routes.
+
+
+
+
+logout() should:
+
+
+Call backend logout if exists OR just clear the cookie/session endpoint.
+
+
+Clear auth state on frontend.
+
+
+Redirect to / (Landing).
+
+
+
+
+Do NOT:
+
+
+Break the existing User type fields.
+
+
+Rename properties used in the sidebar / profile components.
+
+
+C) Frontend – PROTECTED ROUTE
+File to inspect:
+
+
+client/src/components/ProtectedRoute.tsx (or similar)
+
+
+Required behavior:
+
+
+If loading === true → show a loading spinner or blank.
+
+
+If isAuthenticated === false → redirect to /login.
+
+
+If isAuthenticated === true → render the child component / layout.
+
+
+Make sure ProtectedRoute does not accidentally render the Landing page for /dashboard.
+D) Frontend – ROUTING (App.tsx)
+File to inspect:
+
+
+client/src/App.tsx
+
+
+Required structure (conceptual, you can adapt to existing code):
+<BrowserRouter>
+  <Routes>
+    {/* Public */}
+    <Route path="/" element={<LandingPage />} />
+    <Route path="/login" element={<LoginPage />} />
+
+    {/* Private - wrapped in ProtectedRoute and MainLayout with sidebar */}
+    <Route
+      path="/"
+      element={
+        <ProtectedRoute>
+          <MainLayout />  {/* contains sidebar + <Outlet /> */}
+        </ProtectedRoute>
+      }
+    >
+      <Route path="dashboard" element={<DashboardPage />} />
+      <Route path="my-courses" element={<MyCoursesPage />} />
+      <Route path="my-renewals" element={<MyRenewalsPage />} />
+      <Route path="progression" element={<ProgressionPage />} />
+      <Route path="approvals" element={<ApprovalsPage />} />
+      <Route path="team" element={<TeamOverviewPage />} />
+      <Route path="users" element={<UserManagementPage />} />
+      <Route path="departments" element={<DepartmentsPage />} />
+      <Route path="kpi-dashboard" element={<KpiDashboardPage />} />
+      {/* ... and the rest of existing routes */}
+    </Route>
+  </Routes>
+</BrowserRouter>
+
+Key points:
+
+
+/dashboard should render DashboardPage inside MainLayout with sidebar.
+
+
+LandingPage must never be rendered for /dashboard.
+
+
+Do NOT remove any existing pages; only fix which component is mounted for each path.
+
+
+E) Frontend – LOGIN PAGE
+File:
+
+
+client/src/pages/login.tsx
+
+
+Required behavior:
+
+
+On successful login:
+
+
+Do NOT do any complex role-based mapping.
+
+
+Simply:
+
+
+
+
+await login(email, password);
+navigate('/dashboard', { replace: true });
+
+
+
+If the user is already authenticated and opens /login:
+
+
+Immediately redirect to /dashboard.
+
+
+
+
+Do NOT:
+
+
+Change validation.
+
+
+Change design.
+
+
+
+4) FINAL ACCEPTANCE TESTS (you must run them)
+
+
+Open private window → go to /dashboard
+→ You should be redirected to /login.
+
+
+Login as admin@democorp.local / TrainFlow123!
+→ You should be redirected to /dashboard.
+→ You should see the dashboard with sidebar, NOT the public landing page.
+
+
+Refresh the /dashboard page
+→ You should remain logged in and still see the dashboard.
+
+
+Click other sidebar links (e.g., /users, /departments)
+→ They should work according to RBAC (no 404, no landing page flash).
+
+
+Logout
+→ You should be sent back to / and see the public landing.
+
+
+Only when ALL these steps pass, the task is complete.
+
+Stop after this set of fixes. Do not introduce new features or refactors.
+Your sole job is to make the login + routing flow behave exactly as specified above.
