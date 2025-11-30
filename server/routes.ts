@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import OpenAI from "openai";
 import { runManualExpirationCheck } from "./worker";
+import bcrypt from "bcryptjs";
 import {
   generateTrainingComplianceData, generateTrainingCompliancePDF, generateTrainingComplianceExcel,
   generateEmployeeProgressData, generateEmployeeProgressPDF, generateEmployeeProgressExcel,
@@ -94,6 +95,51 @@ export async function registerRoutes(
   // =====================
   // AUTH ROUTES
   // =====================
+  app.post("/api/v1/users/login", async (req: Request, res: Response) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ detail: "Email and password required" });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.password) {
+        return res.status(401).json({ detail: "Invalid email or password" });
+      }
+      
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        return res.status(401).json({ detail: "Invalid email or password" });
+      }
+      
+      if (!user.isActive) {
+        return res.status(403).json({ detail: "User account is inactive" });
+      }
+      
+      // Log the login
+      await auditLog(user.id, 'login', 'user', user.id, null, null, req);
+      
+      // Store user in session
+      req.login(user, (err) => {
+        if (err) {
+          return res.status(500).json({ detail: "Login failed" });
+        }
+        
+        res.json({
+          role: user.role,
+          email: user.email,
+          user_id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        });
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ detail: "Login failed" });
+    }
+  });
+
   app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     res.json(req.user);
   });
