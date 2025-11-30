@@ -4,14 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
 import { GraduationCap, ArrowLeft } from "lucide-react";
 import { getDefaultRouteForRole } from "@/utils/roleRoutes";
+
+interface LoginResponse {
+  role: string;
+  email: string;
+}
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -23,7 +26,19 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const user = await login(email, password);
+      const res = await fetch("/api/v1/users/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "Login failed");
+      }
+
+      const user = (await res.json()) as LoginResponse;
 
       toast({
         title: "Welcome",
