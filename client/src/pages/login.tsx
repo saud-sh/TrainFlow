@@ -45,9 +45,13 @@ export default function Login() {
         description: "You have been logged in successfully",
       });
 
-      // Redirect to role-based default route
+      // Redirect to role-based default route - with small delay to ensure session is saved
       const defaultRoute = getDefaultRouteForRole(user.role as any);
-      setLocation(defaultRoute);
+      console.log("Login successful. User role:", user.role, "Redirecting to:", defaultRoute);
+      
+      setTimeout(() => {
+        setLocation(defaultRoute);
+      }, 500);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Network error";
       setError(message);
