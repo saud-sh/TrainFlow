@@ -1,0 +1,54 @@
+import { createContext, useContext, useState, useEffect } from "react";
+
+type Language = "en" | "ar";
+
+interface LanguageContextType {
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  toggleLanguage: () => void;
+}
+
+const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+
+export function LanguageProvider({ children }: { children: React.ReactNode }) {
+  const [language, setLanguageState] = useState<Language>("en");
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("trainflow_lang") as Language | null;
+    const lang = stored || "en";
+    setLanguageState(lang);
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = lang;
+    setIsHydrated(true);
+  }, []);
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    localStorage.setItem("trainflow_lang", lang);
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = lang;
+  };
+
+  const toggleLanguage = () => {
+    setLanguage(language === "en" ? "ar" : "en");
+  };
+
+  if (!isHydrated) {
+    return <>{children}</>;
+  }
+
+  return (
+    <LanguageContext.Provider value={{ language, setLanguage, toggleLanguage }}>
+      {children}
+    </LanguageContext.Provider>
+  );
+}
+
+export function useLanguage(): LanguageContextType {
+  const context = useContext(LanguageContext);
+  if (!context) {
+    throw new Error("useLanguage must be used within LanguageProvider");
+  }
+  return context;
+}
