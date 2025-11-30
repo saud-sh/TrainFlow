@@ -31,6 +31,7 @@ class Tenant(Base):
     notifications = relationship("Notification", back_populates="tenant")
     kpi_snapshots = relationship("KPISnapshot", back_populates="tenant")
     audit_logs = relationship("AuditLog", back_populates="tenant")
+    integration_configs = relationship("IntegrationConfig", back_populates="tenant")
 
 
 class User(Base):
@@ -264,3 +265,91 @@ class AuditLog(Base):
     
     tenant = relationship("Tenant", back_populates="audit_logs")
     user = relationship("User", back_populates="audit_logs")
+
+
+# Integration Layer Models
+class IntegrationConfig(Base):
+    """Integration configuration for external systems."""
+    __tablename__ = "integration_configs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    provider = Column(String(50), nullable=False)  # sap, oracle, successfactors, cornerstone, database, webhook, file
+    type = Column(String(50), nullable=False)  # pull, push, sync, webhook
+    name = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    config = Column(JSON, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    tenant = relationship("Tenant", back_populates="integration_configs")
+    credentials = relationship("IntegrationCredential", back_populates="config", cascade="all, delete-orphan")
+    mappings = relationship("IntegrationMapping", back_populates="config", cascade="all, delete-orphan")
+    logs = relationship("IntegrationLog", back_populates="config", cascade="all, delete-orphan")
+    webhook_events = relationship("IntegrationWebhookEvent", back_populates="config", cascade="all, delete-orphan")
+
+
+class IntegrationCredential(Base):
+    """Encrypted credentials for integrations."""
+    __tablename__ = "integration_credentials"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    config_id = Column(UUID(as_uuid=True), ForeignKey("integration_configs.id"), nullable=False, index=True)
+    encrypted_payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    tenant = relationship("Tenant")
+    config = relationship("IntegrationConfig", back_populates="credentials")
+
+
+class IntegrationMapping(Base):
+    """Field mappings for data transformation."""
+    __tablename__ = "integration_mappings"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    config_id = Column(UUID(as_uuid=True), ForeignKey("integration_configs.id"), nullable=False, index=True)
+    source_field = Column(String(255), nullable=False)
+    target_field = Column(String(255), nullable=False)
+    transform_function = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    tenant = relationship("Tenant")
+    config = relationship("IntegrationConfig", back_populates="mappings")
+
+
+class IntegrationLog(Base):
+    """Logs for integration sync operations."""
+    __tablename__ = "integration_logs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    config_id = Column(UUID(as_uuid=True), ForeignKey("integration_configs.id"), nullable=False, index=True)
+    status = Column(String(50), nullable=False)  # success, error
+    message = Column(Text, nullable=True)
+    payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    tenant = relationship("Tenant")
+    config = relationship("IntegrationConfig", back_populates="logs")
+
+
+class IntegrationWebhookEvent(Base):
+    """Webhook events from external systems."""
+    __tablename__ = "integration_webhook_events"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    config_id = Column(UUID(as_uuid=True), ForeignKey("integration_configs.id"), nullable=False, index=True)
+    event_type = Column(String(100), nullable=False)
+    data = Column(JSON, nullable=False)
+    processed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    tenant = relationship("Tenant")
+    config = relationship("IntegrationConfig", back_populates="webhook_events")
