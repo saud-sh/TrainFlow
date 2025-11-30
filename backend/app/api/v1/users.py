@@ -6,6 +6,7 @@ from backend.app.db.models import User, Tenant
 from backend.app.api.dependencies import get_current_user, require_admin, require_training_officer
 from backend.app.services.auth_service import authenticate_user, hash_password, create_access_token
 from backend.app.core.config import settings
+from backend.app.seeds.demo_seed import run_demo_seed
 from pydantic import BaseModel
 from typing import Optional
 
@@ -121,3 +122,12 @@ async def list_users(
         }
         for u in users
     ]
+
+@router.post("/seed-demo")
+async def seed_demo(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Create comprehensive demo data (admin only). Idempotent."""
+    summary = run_demo_seed(db)
+    return summary
