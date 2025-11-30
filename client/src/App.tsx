@@ -22,6 +22,8 @@ import Enrollments from "@/pages/enrollments";
 import Recommendations from "@/pages/recommendations";
 import Progression from "@/pages/progression";
 import GradeReadiness from "@/pages/grade-readiness";
+import KPIDashboard from "@/pages/kpi-dashboard";
+import Integrations from "@/pages/integrations";
 import Users from "@/pages/users";
 import AuditLogs from "@/pages/audit-logs";
 import Reports from "@/pages/reports";
@@ -101,6 +103,8 @@ function Router() {
         <Route path="/recommendations" component={Recommendations} />
         <Route path="/progression" component={Progression} />
         <Route path="/grade-readiness" component={GradeReadiness} />
+        <Route path="/kpi-dashboard" component={KPIDashboard} />
+        <Route path="/integrations" component={Integrations} />
         <Route path="/users" component={Users} />
         <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/reports" component={Reports} />

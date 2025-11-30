@@ -37,6 +37,8 @@ import {
   History,
   Sparkles,
   Brain,
+  BarChart3,
+  ArrowRightLeft,
   ChevronUp,
   Building2,
   UserCircle,
@@ -136,10 +138,22 @@ const navItems: NavItem[] = [
     roles: ["administrator"],
   },
   {
+    title: "Integrations",
+    url: "/integrations",
+    icon: ArrowRightLeft,
+    roles: ["administrator"],
+  },
+  {
     title: "Reports",
     url: "/reports",
     icon: FileText,
     roles: ["manager", "training_officer", "administrator"],
+  },
+  {
+    title: "KPI Dashboard",
+    url: "/kpi-dashboard",
+    icon: BarChart3,
+    roles: ["employee", "foreman", "manager", "training_officer", "administrator"],
   },
 ];
 

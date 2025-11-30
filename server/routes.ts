@@ -1539,6 +1539,779 @@ Respond in JSON format:
   });
 
   // =====================
+  // ADVANCED KPI ENGINE
+  // =====================
+  
+  // Trend Analysis - Historical compliance data
+  app.get("/api/kpi/trends", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const { period = '6months' } = req.query;
+      
+      const enrollments = await storage.getAllEnrollments(tenantId);
+      const users = await storage.getAllUsers(tenantId);
+      const auditLogs = await storage.getAuditLogs(tenantId, 1000);
+      
+      const employees = users.filter(u => u.role === 'employee');
+      const now = new Date();
+      
+      // Generate monthly trend data
+      const months: { month: string; date: Date }[] = [];
+      const monthCount = period === '12months' ? 12 : period === '3months' ? 3 : 6;
+      
+      for (let i = monthCount - 1; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({
+          month: date.toLocaleString('default', { month: 'short', year: '2-digit' }),
+          date,
+        });
+      }
+      
+      const trends = months.map(({ month, date }) => {
+        const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+        
+        // Count enrollments active at end of that month
+        const activeAtMonth = enrollments.filter(e => {
+          const createdAt = e.createdAt ? new Date(e.createdAt) : new Date();
+          const expiresAt = e.expiresAt ? new Date(e.expiresAt) : null;
+          return createdAt <= endOfMonth && (!expiresAt || expiresAt > endOfMonth);
+        });
+        
+        // Count expired enrollments at end of month
+        const expiredAtMonth = enrollments.filter(e => {
+          const expiresAt = e.expiresAt ? new Date(e.expiresAt) : null;
+          return expiresAt && expiresAt <= endOfMonth && expiresAt > date;
+        });
+        
+        // Calculate compliance for that month
+        const employeesWithActiveTraining = new Set(activeAtMonth.map(e => e.userId));
+        const complianceRate = employees.length > 0
+          ? Math.round((employeesWithActiveTraining.size / employees.length) * 100)
+          : 100;
+        
+        return {
+          month,
+          activeEnrollments: activeAtMonth.length,
+          newEnrollments: enrollments.filter(e => {
+            const createdAt = e.createdAt ? new Date(e.createdAt) : null;
+            return createdAt && createdAt >= date && createdAt <= endOfMonth;
+          }).length,
+          expiredEnrollments: expiredAtMonth.length,
+          complianceRate,
+          trainedEmployees: employeesWithActiveTraining.size,
+        };
+      });
+      
+      // Calculate growth rates
+      const firstMonth = trends[0];
+      const lastMonth = trends[trends.length - 1];
+      
+      const complianceGrowth = firstMonth.complianceRate > 0
+        ? Math.round(((lastMonth.complianceRate - firstMonth.complianceRate) / firstMonth.complianceRate) * 100)
+        : 0;
+      
+      const enrollmentGrowth = firstMonth.activeEnrollments > 0
+        ? Math.round(((lastMonth.activeEnrollments - firstMonth.activeEnrollments) / firstMonth.activeEnrollments) * 100)
+        : 0;
+      
+      res.json({
+        trends,
+        summary: {
+          complianceGrowth,
+          enrollmentGrowth,
+          averageComplianceRate: Math.round(trends.reduce((sum, t) => sum + t.complianceRate, 0) / trends.length),
+          totalNewEnrollments: trends.reduce((sum, t) => sum + t.newEnrollments, 0),
+          totalExpiredEnrollments: trends.reduce((sum, t) => sum + t.expiredEnrollments, 0),
+        },
+        period,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("KPI trends error:", error);
+      res.status(500).json({ error: "Failed to generate KPI trends" });
+    }
+  });
+  
+  // Department Comparison with Drill-down
+  app.get("/api/kpi/department-comparison", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      
+      const departments = await storage.getAllDepartments(tenantId);
+      const users = await storage.getAllUsers(tenantId);
+      const enrollments = await storage.getAllEnrollments(tenantId);
+      const courses = await storage.getAllCourses(tenantId);
+      const progressionTasks = await storage.getAllProgressionTasks(tenantId);
+      
+      const now = new Date();
+      const mandatoryCourses = courses.filter(c => c.isMandatory && c.isActive);
+      
+      const departmentMetrics = await Promise.all(departments.map(async (dept) => {
+        const deptUsers = users.filter(u => u.departmentId === dept.id);
+        const deptEmployees = deptUsers.filter(u => u.role === 'employee');
+        const deptEnrollments = enrollments.filter(e => 
+          deptUsers.some(u => u.id === e.userId)
+        );
+        
+        // Compliance calculations
+        const activeEnrollments = deptEnrollments.filter(e => 
+          e.status === 'active' && e.expiresAt && new Date(e.expiresAt) > now
+        );
+        const expiredEnrollments = deptEnrollments.filter(e => 
+          e.expiresAt && new Date(e.expiresAt) <= now
+        );
+        const expiringIn30Days = deptEnrollments.filter(e => {
+          if (!e.expiresAt) return false;
+          const expires = new Date(e.expiresAt);
+          const thirtyDays = new Date(now);
+          thirtyDays.setDate(thirtyDays.getDate() + 30);
+          return expires > now && expires <= thirtyDays;
+        });
+        
+        // Mandatory compliance
+        let mandatoryCompliant = 0;
+        for (const emp of deptEmployees) {
+          const empEnrollments = deptEnrollments.filter(e => e.userId === emp.id);
+          const hasAllMandatory = mandatoryCourses.every(mc => 
+            empEnrollments.some(e => 
+              e.courseId === mc.id && 
+              (e.status === 'completed' || (e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)))
+            )
+          );
+          if (hasAllMandatory || mandatoryCourses.length === 0) mandatoryCompliant++;
+        }
+        
+        // Training completion rate
+        const completedEnrollments = deptEnrollments.filter(e => 
+          e.status === 'completed' || (e.status === 'active' && e.completedAt)
+        );
+        
+        // Progression tasks
+        const deptTasks = progressionTasks.filter(t => 
+          deptUsers.some(u => u.id === t.userId)
+        );
+        const completedTasks = deptTasks.filter(t => t.status === 'completed');
+        
+        // Average courses per employee
+        const avgCoursesPerEmployee = deptEmployees.length > 0
+          ? Math.round((deptEnrollments.length / deptEmployees.length) * 10) / 10
+          : 0;
+        
+        return {
+          departmentId: dept.id,
+          departmentName: dept.name,
+          departmentCode: dept.code,
+          employeeCount: deptEmployees.length,
+          totalUsers: deptUsers.length,
+          metrics: {
+            complianceRate: deptEmployees.length > 0
+              ? Math.round((mandatoryCompliant / deptEmployees.length) * 100)
+              : 100,
+            trainingRate: deptEmployees.length > 0
+              ? Math.round((deptEmployees.filter(e => deptEnrollments.some(en => en.userId === e.id)).length / deptEmployees.length) * 100)
+              : 0,
+            completionRate: deptEnrollments.length > 0
+              ? Math.round((completedEnrollments.length / deptEnrollments.length) * 100)
+              : 0,
+            taskCompletionRate: deptTasks.length > 0
+              ? Math.round((completedTasks.length / deptTasks.length) * 100)
+              : 0,
+          },
+          enrollments: {
+            total: deptEnrollments.length,
+            active: activeEnrollments.length,
+            expired: expiredEnrollments.length,
+            expiringIn30Days: expiringIn30Days.length,
+            completed: completedEnrollments.length,
+          },
+          tasks: {
+            total: deptTasks.length,
+            completed: completedTasks.length,
+            inProgress: deptTasks.filter(t => t.status === 'in_progress').length,
+            notStarted: deptTasks.filter(t => t.status === 'not_started').length,
+          },
+          avgCoursesPerEmployee,
+        };
+      }));
+      
+      // Sort by compliance rate
+      departmentMetrics.sort((a, b) => b.metrics.complianceRate - a.metrics.complianceRate);
+      
+      // Calculate organization-wide averages
+      const orgAverages = {
+        complianceRate: Math.round(departmentMetrics.reduce((sum, d) => sum + d.metrics.complianceRate, 0) / (departmentMetrics.length || 1)),
+        trainingRate: Math.round(departmentMetrics.reduce((sum, d) => sum + d.metrics.trainingRate, 0) / (departmentMetrics.length || 1)),
+        completionRate: Math.round(departmentMetrics.reduce((sum, d) => sum + d.metrics.completionRate, 0) / (departmentMetrics.length || 1)),
+        taskCompletionRate: Math.round(departmentMetrics.reduce((sum, d) => sum + d.metrics.taskCompletionRate, 0) / (departmentMetrics.length || 1)),
+      };
+      
+      res.json({
+        departments: departmentMetrics,
+        organizationAverages: orgAverages,
+        topPerformers: departmentMetrics.slice(0, 3).map(d => ({ name: d.departmentName, complianceRate: d.metrics.complianceRate })),
+        needsAttention: departmentMetrics.filter(d => d.metrics.complianceRate < 80).map(d => ({ name: d.departmentName, complianceRate: d.metrics.complianceRate })),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Department comparison error:", error);
+      res.status(500).json({ error: "Failed to generate department comparison" });
+    }
+  });
+  
+  // Department Drill-down
+  app.get("/api/kpi/department/:departmentId/details", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const { departmentId } = req.params;
+      const tenantId = req.user!.tenantId || 'default';
+      const deptId = parseInt(departmentId);
+      
+      const department = await storage.getDepartment(deptId);
+      if (!department || department.tenantId !== tenantId) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+      
+      const users = await storage.getAllUsers(tenantId);
+      const enrollments = await storage.getAllEnrollments(tenantId);
+      const courses = await storage.getAllCourses(tenantId);
+      const progressionTasks = await storage.getAllProgressionTasks(tenantId);
+      
+      const deptUsers = users.filter(u => u.departmentId === deptId);
+      const deptEmployees = deptUsers.filter(u => u.role === 'employee');
+      const now = new Date();
+      
+      // Employee-level details
+      const employeeDetails = deptEmployees.map(emp => {
+        const empEnrollments = enrollments.filter(e => e.userId === emp.id);
+        const empTasks = progressionTasks.filter(t => t.userId === emp.id);
+        
+        const activeEnrollments = empEnrollments.filter(e => 
+          e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)
+        );
+        const expiredEnrollments = empEnrollments.filter(e => 
+          e.expiresAt && new Date(e.expiresAt) <= now
+        );
+        const completedEnrollments = empEnrollments.filter(e => 
+          e.status === 'completed' || e.completedAt
+        );
+        
+        return {
+          id: emp.id,
+          name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Unknown',
+          email: emp.email,
+          currentGrade: emp.currentGrade,
+          jobTitle: emp.jobTitle,
+          enrollments: {
+            total: empEnrollments.length,
+            active: activeEnrollments.length,
+            expired: expiredEnrollments.length,
+            completed: completedEnrollments.length,
+          },
+          tasks: {
+            total: empTasks.length,
+            completed: empTasks.filter(t => t.status === 'completed').length,
+            inProgress: empTasks.filter(t => t.status === 'in_progress').length,
+          },
+          complianceStatus: expiredEnrollments.length > 0 ? 'Non-Compliant' : 
+            (activeEnrollments.length > 0 ? 'Compliant' : 'No Training'),
+        };
+      });
+      
+      // Course breakdown
+      const courseBreakdown = courses.filter(c => c.isActive).map(course => {
+        const courseEnrollments = enrollments.filter(e => 
+          e.courseId === course.id && deptUsers.some(u => u.id === e.userId)
+        );
+        
+        return {
+          courseId: course.id,
+          title: course.title,
+          category: course.category,
+          isMandatory: course.isMandatory,
+          enrolledCount: courseEnrollments.length,
+          completedCount: courseEnrollments.filter(e => e.status === 'completed' || e.completedAt).length,
+          activeCount: courseEnrollments.filter(e => e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)).length,
+          expiredCount: courseEnrollments.filter(e => e.expiresAt && new Date(e.expiresAt) <= now).length,
+          penetrationRate: deptEmployees.length > 0 
+            ? Math.round((courseEnrollments.length / deptEmployees.length) * 100)
+            : 0,
+        };
+      }).sort((a, b) => b.enrolledCount - a.enrolledCount);
+      
+      res.json({
+        department: {
+          id: department.id,
+          name: department.name,
+          code: department.code,
+        },
+        summary: {
+          totalEmployees: deptEmployees.length,
+          compliantEmployees: employeeDetails.filter(e => e.complianceStatus === 'Compliant').length,
+          nonCompliantEmployees: employeeDetails.filter(e => e.complianceStatus === 'Non-Compliant').length,
+          untrainedEmployees: employeeDetails.filter(e => e.complianceStatus === 'No Training').length,
+        },
+        employees: employeeDetails,
+        courseBreakdown: courseBreakdown.slice(0, 10), // Top 10 courses
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Department drill-down error:", error);
+      res.status(500).json({ error: "Failed to generate department details" });
+    }
+  });
+  
+  // Custom KPI Dashboard Configuration
+  app.get("/api/kpi/summary", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      
+      const users = await storage.getAllUsers(tenantId);
+      const enrollments = await storage.getAllEnrollments(tenantId);
+      const courses = await storage.getAllCourses(tenantId);
+      const renewals = await storage.getAllRenewalRequests(tenantId);
+      const progressionTasks = await storage.getAllProgressionTasks(tenantId);
+      
+      const now = new Date();
+      const employees = users.filter(u => u.role === 'employee');
+      const mandatoryCourses = courses.filter(c => c.isMandatory && c.isActive);
+      
+      // User-specific KPIs based on role
+      let personalKPIs: Record<string, unknown> = {};
+      
+      if (['employee', 'foreman', 'manager'].includes(userRole)) {
+        const myEnrollments = enrollments.filter(e => e.userId === userId);
+        const myTasks = progressionTasks.filter(t => t.userId === userId);
+        
+        personalKPIs = {
+          myCourses: myEnrollments.length,
+          myActiveCourses: myEnrollments.filter(e => e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)).length,
+          myCompletedCourses: myEnrollments.filter(e => e.status === 'completed' || e.completedAt).length,
+          myExpiredCourses: myEnrollments.filter(e => e.expiresAt && new Date(e.expiresAt) <= now).length,
+          myExpiringIn30Days: myEnrollments.filter(e => {
+            if (!e.expiresAt) return false;
+            const expires = new Date(e.expiresAt);
+            const thirtyDays = new Date(now);
+            thirtyDays.setDate(thirtyDays.getDate() + 30);
+            return expires > now && expires <= thirtyDays;
+          }).length,
+          myTasks: myTasks.length,
+          myCompletedTasks: myTasks.filter(t => t.status === 'completed').length,
+          myTaskProgress: myTasks.length > 0 
+            ? Math.round((myTasks.filter(t => t.status === 'completed').length / myTasks.length) * 100) 
+            : 0,
+        };
+      }
+      
+      // Organization-wide KPIs (for managers/admins)
+      let orgKPIs: Record<string, unknown> = {};
+      
+      if (['manager', 'training_officer', 'administrator'].includes(userRole)) {
+        const activeEnrollments = enrollments.filter(e => 
+          e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)
+        );
+        const expiredEnrollments = enrollments.filter(e => 
+          e.expiresAt && new Date(e.expiresAt) <= now
+        );
+        
+        // Calculate compliance
+        let compliantCount = 0;
+        for (const emp of employees) {
+          const empEnrollments = enrollments.filter(e => e.userId === emp.id);
+          const hasExpired = empEnrollments.some(e => e.expiresAt && new Date(e.expiresAt) <= now);
+          if (!hasExpired && empEnrollments.length > 0) compliantCount++;
+        }
+        
+        orgKPIs = {
+          totalEmployees: employees.length,
+          totalEnrollments: enrollments.length,
+          activeEnrollments: activeEnrollments.length,
+          expiredEnrollments: expiredEnrollments.length,
+          complianceRate: employees.length > 0 ? Math.round((compliantCount / employees.length) * 100) : 100,
+          trainingCoverage: employees.length > 0 
+            ? Math.round((new Set(enrollments.map(e => e.userId)).size / employees.length) * 100)
+            : 0,
+          pendingRenewals: renewals.filter(r => r.status === 'pending' || r.status === 'foreman_approved').length,
+          completedRenewals: renewals.filter(r => r.status === 'completed').length,
+          totalCourses: courses.filter(c => c.isActive).length,
+          mandatoryCourses: mandatoryCourses.length,
+        };
+      }
+      
+      res.json({
+        personalKPIs,
+        organizationKPIs: orgKPIs,
+        role: userRole,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("KPI summary error:", error);
+      res.status(500).json({ error: "Failed to generate KPI summary" });
+    }
+  });
+
+  // =====================
+  // SAP/ORACLE INTEGRATION API
+  // =====================
+  
+  // Export employees in SAP format
+  app.get("/api/integration/sap/employees", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const users = await storage.getAllUsers(tenantId);
+      const departments = await storage.getAllDepartments(tenantId);
+      
+      // SAP HR format for employee master data
+      const sapEmployees = users.map(user => {
+        const dept = departments.find(d => d.id === user.departmentId);
+        return {
+          PERNR: user.employeeNumber || user.id.substring(0, 8).toUpperCase(),
+          NACHN: user.lastName || '',
+          VORNA: user.firstName || '',
+          EMAIL: user.email || '',
+          ORGEH: dept?.code || '',
+          ORGTX: dept?.name || '',
+          PLANS: user.jobTitle || '',
+          GRADE: user.currentGrade || '',
+          BEGDA: user.createdAt ? new Date(user.createdAt).toISOString().split('T')[0].replace(/-/g, '') : '',
+          ENDDA: '99991231',
+          STAT2: user.isActive ? '1' : '0',
+          WERKS: tenantId,
+        };
+      });
+      
+      await auditLog(req.user!.id, 'create', 'integration_export', 'sap_employees', null, { count: sapEmployees.length }, req);
+      
+      res.json({
+        format: 'SAP_HR_INFOTYPE_0001',
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        recordCount: sapEmployees.length,
+        data: sapEmployees,
+      });
+    } catch (error) {
+      console.error("SAP employee export error:", error);
+      res.status(500).json({ error: "Failed to export employees in SAP format" });
+    }
+  });
+  
+  // Export training records in SAP format
+  app.get("/api/integration/sap/training", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const enrollments = await storage.getAllEnrollments(tenantId);
+      const courses = await storage.getAllCourses(tenantId);
+      const users = await storage.getAllUsers(tenantId);
+      
+      // SAP Training & Event Management format
+      const sapTraining = enrollments.map(enrollment => {
+        const course = courses.find(c => c.id === enrollment.courseId);
+        const user = users.find(u => u.id === enrollment.userId);
+        
+        return {
+          OBJID: enrollment.id.toString().padStart(8, '0'),
+          PERNR: user?.employeeNumber || user?.id.substring(0, 8).toUpperCase() || '',
+          SCHED: course?.id.toString().padStart(8, '0') || '',
+          EVTYP: 'ET01',
+          EVTXT: course?.title || '',
+          CATEG: course?.category || '',
+          BEGDA: enrollment.createdAt ? new Date(enrollment.createdAt).toISOString().split('T')[0].replace(/-/g, '') : '',
+          ENDDA: enrollment.expiresAt ? new Date(enrollment.expiresAt).toISOString().split('T')[0].replace(/-/g, '') : '99991231',
+          STATS: enrollment.status === 'completed' ? '3' : enrollment.status === 'active' ? '2' : '1',
+          STATU: enrollment.status.toUpperCase(),
+          PROV: course?.provider || '',
+          DURAT: course?.duration || '',
+          VALID: course?.validityPeriodDays?.toString() || '',
+        };
+      });
+      
+      await auditLog(req.user!.id, 'create', 'integration_export', 'sap_training', null, { count: sapTraining.length }, req);
+      
+      res.json({
+        format: 'SAP_TEM_TRAINING_RECORDS',
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        recordCount: sapTraining.length,
+        data: sapTraining,
+      });
+    } catch (error) {
+      console.error("SAP training export error:", error);
+      res.status(500).json({ error: "Failed to export training in SAP format" });
+    }
+  });
+  
+  // Export certifications in Oracle HCM format
+  app.get("/api/integration/oracle/certifications", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const enrollments = await storage.getAllEnrollments(tenantId);
+      const courses = await storage.getAllCourses(tenantId);
+      const users = await storage.getAllUsers(tenantId);
+      
+      const now = new Date();
+      
+      // Oracle HCM Cloud Certifications format
+      const oracleCerts = enrollments
+        .filter(e => e.status === 'completed' || (e.status === 'active' && e.completedAt))
+        .map(enrollment => {
+          const course = courses.find(c => c.id === enrollment.courseId);
+          const user = users.find(u => u.id === enrollment.userId);
+          const isExpired = enrollment.expiresAt && new Date(enrollment.expiresAt) <= now;
+          
+          return {
+            CertificationId: `CERT-${enrollment.id.toString().padStart(8, '0')}`,
+            PersonId: user?.id || '',
+            PersonNumber: user?.employeeNumber || '',
+            PersonName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
+            CertificationName: course?.title || '',
+            CertificationType: course?.category || 'Training',
+            IssuingAuthority: course?.provider || 'Internal',
+            IssueDate: enrollment.completedAt 
+              ? new Date(enrollment.completedAt).toISOString().split('T')[0]
+              : enrollment.createdAt 
+                ? new Date(enrollment.createdAt).toISOString().split('T')[0]
+                : '',
+            ExpirationDate: enrollment.expiresAt 
+              ? new Date(enrollment.expiresAt).toISOString().split('T')[0]
+              : '',
+            CertificationStatus: isExpired ? 'EXPIRED' : 'VALID',
+            ValidityPeriod: course?.validityPeriodDays || 0,
+            MandatoryFlag: course?.isMandatory ? 'Y' : 'N',
+          };
+        });
+      
+      await auditLog(req.user!.id, 'create', 'integration_export', 'oracle_certifications', null, { count: oracleCerts.length }, req);
+      
+      res.json({
+        format: 'ORACLE_HCM_CERTIFICATIONS',
+        version: '22A',
+        exportDate: new Date().toISOString(),
+        recordCount: oracleCerts.length,
+        data: oracleCerts,
+      });
+    } catch (error) {
+      console.error("Oracle certifications export error:", error);
+      res.status(500).json({ error: "Failed to export certifications in Oracle format" });
+    }
+  });
+  
+  // Import employees from SAP (bidirectional sync)
+  app.post("/api/integration/sap/employees/import", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const { data } = req.body;
+      
+      if (!Array.isArray(data)) {
+        return res.status(400).json({ error: "Invalid data format. Expected array of employee records." });
+      }
+      
+      const results = {
+        processed: 0,
+        created: 0,
+        updated: 0,
+        errors: [] as { record: number; error: string }[],
+      };
+      
+      for (let i = 0; i < data.length; i++) {
+        const record = data[i];
+        try {
+          // Find existing user by employee number or email
+          const existingUsers = await storage.getAllUsers(tenantId);
+          const existing = existingUsers.find(u => 
+            u.employeeNumber === record.PERNR || u.email === record.EMAIL
+          );
+          
+          // Find department by code
+          const departments = await storage.getAllDepartments(tenantId);
+          const dept = departments.find(d => d.code === record.ORGEH);
+          
+          if (existing) {
+            // Update existing user
+            await storage.updateUser(existing.id, {
+              firstName: record.VORNA || existing.firstName,
+              lastName: record.NACHN || existing.lastName,
+              jobTitle: record.PLANS || existing.jobTitle,
+              currentGrade: record.GRADE || existing.currentGrade,
+              departmentId: dept?.id || existing.departmentId,
+              isActive: record.STAT2 === '1',
+            });
+            results.updated++;
+          } else if (record.EMAIL) {
+            // Create new user
+            await storage.createUser({
+              email: record.EMAIL,
+              firstName: record.VORNA || '',
+              lastName: record.NACHN || '',
+              employeeNumber: record.PERNR,
+              jobTitle: record.PLANS || '',
+              currentGrade: record.GRADE || '',
+              departmentId: dept?.id,
+              role: 'employee',
+              tenantId,
+              isActive: record.STAT2 === '1',
+            });
+            results.created++;
+          }
+          results.processed++;
+        } catch (err) {
+          results.errors.push({ record: i, error: String(err) });
+        }
+      }
+      
+      await auditLog(req.user!.id, 'create', 'integration_import', 'sap_employees', null, results, req);
+      
+      res.json({
+        success: true,
+        ...results,
+      });
+    } catch (error) {
+      console.error("SAP employee import error:", error);
+      res.status(500).json({ error: "Failed to import employees from SAP format" });
+    }
+  });
+  
+  // Import training completions from Oracle HCM (bidirectional sync)
+  app.post("/api/integration/oracle/training/import", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      const { data } = req.body;
+      
+      if (!Array.isArray(data)) {
+        return res.status(400).json({ error: "Invalid data format. Expected array of training records." });
+      }
+      
+      const results = {
+        processed: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [] as { record: number; error: string }[],
+      };
+      
+      const users = await storage.getAllUsers(tenantId);
+      const courses = await storage.getAllCourses(tenantId);
+      
+      for (let i = 0; i < data.length; i++) {
+        const record = data[i];
+        try {
+          // Find user by person number or ID
+          const user = users.find(u => 
+            u.employeeNumber === record.PersonNumber || u.id === record.PersonId
+          );
+          
+          if (!user) {
+            results.skipped++;
+            results.errors.push({ record: i, error: `User not found: ${record.PersonNumber || record.PersonId}` });
+            continue;
+          }
+          
+          // Find course by title
+          const course = courses.find(c => 
+            c.title.toLowerCase() === record.CertificationName?.toLowerCase()
+          );
+          
+          if (!course) {
+            results.skipped++;
+            results.errors.push({ record: i, error: `Course not found: ${record.CertificationName}` });
+            continue;
+          }
+          
+          // Check for existing enrollment
+          const existingEnrollments = await storage.getEnrollmentsByUser(user.id);
+          const existing = existingEnrollments.find(e => e.courseId === course.id);
+          
+          if (existing) {
+            // Update existing enrollment
+            await storage.updateEnrollment(existing.id, {
+              status: record.CertificationStatus === 'VALID' ? 'active' : 'expired',
+              completedAt: record.IssueDate ? new Date(record.IssueDate) : existing.completedAt,
+              expiresAt: record.ExpirationDate ? new Date(record.ExpirationDate) : existing.expiresAt,
+            });
+            results.updated++;
+          } else {
+            // Create new enrollment
+            await storage.createEnrollment({
+              userId: user.id,
+              courseId: course.id,
+              status: record.CertificationStatus === 'VALID' ? 'active' : 'expired',
+              completedAt: record.IssueDate ? new Date(record.IssueDate) : undefined,
+              expiresAt: record.ExpirationDate ? new Date(record.ExpirationDate) : undefined,
+              tenantId,
+            });
+            results.created++;
+          }
+          results.processed++;
+        } catch (err) {
+          results.errors.push({ record: i, error: String(err) });
+        }
+      }
+      
+      await auditLog(req.user!.id, 'create', 'integration_import', 'oracle_training', null, results, req);
+      
+      res.json({
+        success: true,
+        ...results,
+      });
+    } catch (error) {
+      console.error("Oracle training import error:", error);
+      res.status(500).json({ error: "Failed to import training from Oracle format" });
+    }
+  });
+  
+  // Integration status and health check
+  app.get("/api/integration/status", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const tenantId = req.user!.tenantId || 'default';
+      
+      // Get recent audit logs for integration activities
+      const auditLogs = await storage.getAuditLogs(tenantId, 100);
+      const integrationLogs = auditLogs.filter(log => 
+        log.entityType.startsWith('integration_')
+      );
+      
+      const recentExports = integrationLogs
+        .filter(log => log.entityType.includes('export'))
+        .slice(0, 5)
+        .map(log => ({
+          type: log.entityId || log.entityType,
+          timestamp: log.createdAt,
+          recordCount: (log.newValues as Record<string, unknown>)?.count || 0,
+        }));
+      
+      const recentImports = integrationLogs
+        .filter(log => log.entityType.includes('import'))
+        .slice(0, 5)
+        .map(log => ({
+          type: log.entityId || log.entityType,
+          timestamp: log.createdAt,
+          results: log.newValues,
+        }));
+      
+      res.json({
+        status: 'healthy',
+        supportedFormats: {
+          sap: {
+            employees: { export: true, import: true },
+            training: { export: true, import: false },
+          },
+          oracle: {
+            certifications: { export: true, import: false },
+            training: { export: false, import: true },
+          },
+        },
+        recentActivity: {
+          exports: recentExports,
+          imports: recentImports,
+        },
+        lastChecked: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Integration status error:", error);
+      res.status(500).json({ error: "Failed to get integration status" });
+    }
+  });
+
+  // =====================
   // ADMIN WORKER ROUTES
   // =====================
   app.post("/api/admin/run-expiration-check", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {

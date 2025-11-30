@@ -76,8 +76,27 @@ Preferred communication style: Simple, everyday language.
 - RESTful API endpoints under `/api` prefix
 - Role-based middleware protecting sensitive routes
 - Consistent error handling and logging
-- Request/response logging middleware
+- Request/response logging middleware with duration tracking
 - Audit logging for all CRUD operations
+
+**AI Integration Endpoints:**
+- `POST /api/ai/recommendations` - AI-powered course recommendations based on role and career goals
+- `POST /api/ai/grade-readiness` - AI grade readiness predictor for promotion assessment
+- `GET /api/ai/grade-readiness/:userId` - View grade readiness for specific user (managers/admins)
+
+**KPI Analytics Endpoints:**
+- `GET /api/kpi/summary` - Role-based personalized KPI dashboard data
+- `GET /api/kpi/trends/:metric` - 30/60/90-day trend analysis for key metrics
+- `GET /api/kpi/department-comparison` - Cross-department benchmarking
+- `GET /api/kpi/department/:deptId/drill-down` - Detailed department analysis with employee breakdowns
+
+**SAP/Oracle Integration Endpoints:**
+- `GET /api/integration/sap/employees` - Export employees in SAP HR Infotype 0001 format
+- `GET /api/integration/sap/training` - Export training in SAP TEM format
+- `GET /api/integration/oracle/certifications` - Export certifications in Oracle HCM v22A format
+- `POST /api/integration/sap/employees/import` - Bidirectional employee sync from SAP
+- `POST /api/integration/oracle/training/import` - Import training completions from Oracle HCM
+- `GET /api/integration/status` - Integration health check and activity log
 
 **Database Layer:**
 - Drizzle ORM with schema-first approach
