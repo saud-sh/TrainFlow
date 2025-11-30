@@ -4,11 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { GraduationCap, ArrowLeft } from "lucide-react";
+import { getDefaultRouteForRole } from "@/utils/roleRoutes";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,36 +23,21 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("/api/v1/users/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.detail || "Login failed");
-        toast({
-          title: "Login Failed",
-          description: data.detail || "Invalid email or password",
-          variant: "destructive",
-        });
-        return;
-      }
+      const user = await login(email, password);
 
       toast({
         title: "Welcome",
         description: "You have been logged in successfully",
       });
 
-      // Redirect to dashboard
-      setLocation("/");
+      // Redirect to role-based default route
+      const defaultRoute = getDefaultRouteForRole(user.role);
+      setLocation(defaultRoute, { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Network error";
       setError(message);
       toast({
-        title: "Error",
+        title: "Login Failed",
         description: message,
         variant: "destructive",
       });

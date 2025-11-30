@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { NotificationBell } from "@/components/notification-bell";
+import { ProtectedRoute } from "@/components/routing/ProtectedRoute";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import NotFound from "@/pages/not-found";
@@ -102,23 +103,102 @@ function Router() {
     <AuthenticatedLayout>
       <Switch>
         <Route path="/" component={Dashboard} />
-        <Route path="/my-courses" component={MyCourses} />
-        <Route path="/my-renewals" component={MyRenewals} />
-        <Route path="/approvals" component={Approvals} />
-        <Route path="/approvals/:id" component={ApprovalDetails} />
-        <Route path="/courses" component={Courses} />
-        <Route path="/enrollments" component={Enrollments} />
-        <Route path="/recommendations" component={Recommendations} />
-        <Route path="/progression" component={Progression} />
-        <Route path="/grade-readiness" component={GradeReadiness} />
-        <Route path="/kpi-dashboard" component={KPIDashboard} />
-        <Route path="/integrations" component={Integrations} />
-        <Route path="/users" component={Users} />
-        <Route path="/audit-logs" component={AuditLogs} />
-        <Route path="/reports" component={Reports} />
-        <Route path="/profile" component={Profile} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/departments" component={Departments} />
+        <Route path="/dashboard" component={Dashboard} />
+        <Route path="/my-courses">
+          <ProtectedRoute>
+            <MyCourses />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/my-renewals">
+          <ProtectedRoute>
+            <MyRenewals />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/approvals">
+          <ProtectedRoute>
+            <Approvals />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/approvals/:id">
+          <ProtectedRoute>
+            <ApprovalDetails />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/courses">
+          <ProtectedRoute requiredRoles={["training_officer", "administrator"]}>
+            <Courses />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/enrollments">
+          <ProtectedRoute requiredRoles={["training_officer", "administrator"]}>
+            <Enrollments />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/recommendations">
+          <ProtectedRoute>
+            <Recommendations />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/progression">
+          <ProtectedRoute>
+            <Progression />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/grade-readiness">
+          <ProtectedRoute>
+            <GradeReadiness />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/kpi-dashboard">
+          <ProtectedRoute>
+            <KPIDashboard />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/all-renewals">
+          <ProtectedRoute requiredRoles={["training_officer", "manager", "administrator"]}>
+            <MyRenewals />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/team">
+          <ProtectedRoute requiredRoles={["foreman", "manager", "administrator"]}>
+            <Users />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/integrations">
+          <ProtectedRoute requiredRoles={["administrator"]}>
+            <Integrations />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/users">
+          <ProtectedRoute requiredRoles={["administrator"]}>
+            <Users />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/audit-logs">
+          <ProtectedRoute requiredRoles={["administrator"]}>
+            <AuditLogs />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/reports">
+          <ProtectedRoute>
+            <Reports />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/profile">
+          <ProtectedRoute>
+            <Profile />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/settings">
+          <ProtectedRoute>
+            <Settings />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/departments">
+          <ProtectedRoute requiredRoles={["administrator"]}>
+            <Departments />
+          </ProtectedRoute>
+        </Route>
         <Route component={NotFound} />
       </Switch>
     </AuthenticatedLayout>
