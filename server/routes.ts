@@ -120,9 +120,21 @@ export async function registerRoutes(
       // Log the login
       await auditLog(user.id, 'login', 'user', user.id, null, null, req);
       
-      // Store user in session
-      req.login(user, (err) => {
+      // Store user in session directly (not using Passport)
+      (req.session as any).user = {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        tenantId: user.tenantId,
+        departmentId: user.departmentId,
+      };
+      
+      // Save session explicitly
+      req.session.save((err) => {
         if (err) {
+          console.error("Session save error:", err);
           return res.status(500).json({ detail: "Login failed" });
         }
         
@@ -142,29 +154,60 @@ export async function registerRoutes(
 
   app.get("/api/v1/users/me", async (req: Request, res: Response) => {
     try {
-      // Check if user is authenticated (works for both OAuth and email/password sessions)
-      if (!req.isAuthenticated() || !req.user || !req.user.id) {
-        return res.status(401).json({ detail: "Unauthorized" });
+      // Check email/password session first
+      const sessionUser = (req.session as any)?.user;
+      if (sessionUser) {
+        return res.json({
+          id: sessionUser.id,
+          role: sessionUser.role,
+          email: sessionUser.email,
+          user_id: sessionUser.id,
+          firstName: sessionUser.firstName,
+          lastName: sessionUser.lastName,
+          tenant_id: sessionUser.tenantId,
+          department_id: sessionUser.departmentId,
+        });
       }
       
-      const user = await storage.getUser(req.user.id);
-      if (!user) {
-        return res.status(401).json({ detail: "User not found" });
+      // Fall back to Passport/OIDC authentication for backward compatibility
+      if (req.isAuthenticated() && req.user && (req.user as any).claims?.sub) {
+        const userId = (req.user as any).claims.sub;
+        const user = await storage.getUser(userId);
+        if (user) {
+          return res.json({
+            id: user.id,
+            role: user.role,
+            email: user.email,
+            user_id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            tenant_id: user.tenantId,
+            department_id: user.departmentId,
+          });
+        }
       }
       
-      res.json({
-        id: user.id,
-        role: user.role,
-        email: user.email,
-        user_id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        tenant_id: user.tenantId,
-        department_id: user.departmentId,
-      });
+      // Not authenticated
+      return res.status(401).json({ detail: "Unauthorized" });
     } catch (error) {
       console.error("Get current user error:", error);
       res.status(500).json({ detail: "Failed to fetch user" });
+    }
+  });
+
+  app.post("/api/v1/users/logout", async (req: Request, res: Response) => {
+    try {
+      // Clear session
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("Logout error:", err);
+          return res.status(500).json({ detail: "Logout failed" });
+        }
+        res.json({ success: true });
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+      res.status(500).json({ detail: "Logout failed" });
     }
   });
 

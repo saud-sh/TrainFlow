@@ -23,18 +23,22 @@ export function getSession() {
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
-    createTableIfMissing: false,
+    createTableIfMissing: true,
     ttl: sessionTtl,
     tableName: "sessions",
   });
+  
+  const isProd = process.env.NODE_ENV === 'production';
+  
   return session({
-    secret: process.env.SESSION_SECRET!,
+    secret: process.env.SESSION_SECRET || 'change-me-in-production',
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: isProd || process.env.FORCE_SECURE_COOKIE === 'true',
+      sameSite: isProd || process.env.FORCE_SECURE_COOKIE === 'true' ? 'none' : 'lax',
       maxAge: sessionTtl,
     },
   });
