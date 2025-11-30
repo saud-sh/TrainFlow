@@ -83,125 +83,178 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 }
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/" component={Landing} />
-        <Route component={Landing} />
-      </Switch>
-    );
-  }
+  const { isAuthenticated } = useAuth();
 
   return (
-    <AuthenticatedLayout>
-      <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/my-courses">
-          <ProtectedRoute>
+    <Switch>
+      {/* Public routes - always visible, no auth required */}
+      <Route path="/login" component={Login} />
+      <Route path="/" component={Landing} />
+
+      {/* Protected routes - wrapped in ProtectedRoute for auth checks */}
+      <Route path="/dashboard">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
+            <Dashboard />
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/my-courses">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <MyCourses />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/my-renewals">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/my-renewals">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <MyRenewals />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/approvals">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/approvals">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <Approvals />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/approvals/:id">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/approvals/:id">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <ApprovalDetails />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/courses">
-          <ProtectedRoute requiredRoles={["training_officer", "administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/courses">
+        <ProtectedRoute requiredRoles={["training_officer", "administrator"]}>
+          <AuthenticatedLayout>
             <Courses />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/enrollments">
-          <ProtectedRoute requiredRoles={["training_officer", "administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/enrollments">
+        <ProtectedRoute requiredRoles={["training_officer", "administrator"]}>
+          <AuthenticatedLayout>
             <Enrollments />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/recommendations">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/recommendations">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <Recommendations />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/progression">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/progression">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <Progression />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/grade-readiness">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/grade-readiness">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <GradeReadiness />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/kpi-dashboard">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/kpi-dashboard">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <KPIDashboard />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/all-renewals">
-          <ProtectedRoute requiredRoles={["training_officer", "manager", "administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/all-renewals">
+        <ProtectedRoute requiredRoles={["training_officer", "manager", "administrator"]}>
+          <AuthenticatedLayout>
             <MyRenewals />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/team">
-          <ProtectedRoute requiredRoles={["foreman", "manager", "administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/team">
+        <ProtectedRoute requiredRoles={["foreman", "manager", "administrator"]}>
+          <AuthenticatedLayout>
             <Users />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/integrations">
-          <ProtectedRoute requiredRoles={["administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/integrations">
+        <ProtectedRoute requiredRoles={["administrator"]}>
+          <AuthenticatedLayout>
             <Integrations />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/users">
-          <ProtectedRoute requiredRoles={["administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/users">
+        <ProtectedRoute requiredRoles={["administrator"]}>
+          <AuthenticatedLayout>
             <Users />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/audit-logs">
-          <ProtectedRoute requiredRoles={["administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/audit-logs">
+        <ProtectedRoute requiredRoles={["administrator"]}>
+          <AuthenticatedLayout>
             <AuditLogs />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/reports">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/reports">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <Reports />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/profile">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/profile">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <Profile />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/settings">
-          <ProtectedRoute>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/settings">
+        <ProtectedRoute>
+          <AuthenticatedLayout>
             <Settings />
-          </ProtectedRoute>
-        </Route>
-        <Route path="/departments">
-          <ProtectedRoute requiredRoles={["administrator"]}>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/departments">
+        <ProtectedRoute requiredRoles={["administrator"]}>
+          <AuthenticatedLayout>
             <Departments />
-          </ProtectedRoute>
-        </Route>
-        <Route component={NotFound} />
-      </Switch>
-    </AuthenticatedLayout>
+          </AuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* 404 fallback */}
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 
