@@ -54,7 +54,7 @@ export function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6, duration: 0.8 }}
           >
-            <a href="/api/login">
+            <a href="/login">
               <Button
                 size="lg"
                 className="bg-blue-600 hover:bg-blue-700 text-white"

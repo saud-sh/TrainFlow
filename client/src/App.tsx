@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
+import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import MyCourses from "@/pages/my-courses";
 import MyRenewals from "@/pages/my-renewals";
@@ -90,6 +91,7 @@ function Router() {
   if (!isAuthenticated) {
     return (
       <Switch>
+        <Route path="/login" component={Login} />
         <Route path="/" component={Landing} />
         <Route component={Landing} />
       </Switch>

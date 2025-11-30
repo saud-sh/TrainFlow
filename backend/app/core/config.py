@@ -20,6 +20,10 @@ class Settings(BaseSettings):
         "SECRET_KEY",
         "dev-secret-key-change-in-production"
     )
+    JWT_SECRET: str = os.getenv(
+        "JWT_SECRET",
+        "dev-jwt-secret-change-in-production"
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     
@@ -33,6 +37,9 @@ class Settings(BaseSettings):
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    
+    # Environment
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     
     class Config:
         env_file = ".env"
