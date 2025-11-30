@@ -2449,23 +2449,39 @@ Respond in JSON format:
   // =====================
   // SEED DATA ROUTE (for development)
   // =====================
-  app.post("/api/seed", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+  app.post("/api/v1/admin/seed-demo-v2", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
     try {
+      // Check if already seeded
+      const existingDepts = await storage.getAllDepartments('default');
+      if (existingDepts.length > 0) {
+        return res.json({ 
+          success: true,
+          message: 'Demo data already seeded (idempotent)',
+          info: 'Database already contains departments'
+        });
+      }
+
       // Create departments
-      const engineering = await storage.createDepartment({
-        name: 'Engineering',
-        code: 'ENG',
+      const dept1 = await storage.createDepartment({
+        name: 'Engineering & Technical Management',
+        code: 'ERTMD',
         tenantId: 'default',
       });
       
-      const operations = await storage.createDepartment({
-        name: 'Operations',
-        code: 'OPS',
+      const dept2 = await storage.createDepartment({
+        name: 'Training & Management Services',
+        code: 'TMSD',
         tenantId: 'default',
       });
-      
-      // Create courses
-      const courses = [
+
+      const dept3 = await storage.createDepartment({
+        name: 'Junior Technical Management',
+        code: 'JTMD',
+        tenantId: 'default',
+      });
+
+      // Create courses (10+)
+      const courseData = [
         { title: 'Workplace Safety Fundamentals', category: 'Safety', validityPeriodDays: 365, isMandatory: true, duration: '4 hours', provider: 'Internal' },
         { title: 'Fire Safety & Emergency Response', category: 'Safety', validityPeriodDays: 365, isMandatory: true, duration: '2 hours', provider: 'Internal' },
         { title: 'First Aid & CPR', category: 'Safety', validityPeriodDays: 730, isMandatory: false, duration: '8 hours', provider: 'Red Cross' },
@@ -2474,26 +2490,138 @@ Respond in JSON format:
         { title: 'Project Management Basics', category: 'Professional', validityPeriodDays: 1095, isMandatory: false, duration: '40 hours', provider: 'PMI' },
         { title: 'Data Privacy & Security', category: 'Compliance', validityPeriodDays: 365, isMandatory: true, duration: '3 hours', provider: 'Internal' },
         { title: 'Anti-Harassment Training', category: 'Compliance', validityPeriodDays: 365, isMandatory: true, duration: '2 hours', provider: 'HR' },
+        { title: 'Electrical Safety Standards', category: 'Safety', validityPeriodDays: 365, isMandatory: true, duration: '6 hours', provider: 'Internal' },
+        { title: 'Advanced Excel & Data Analysis', category: 'Technical', validityPeriodDays: 730, isMandatory: false, duration: '20 hours', provider: 'External' },
+        { title: 'Customer Service Excellence', category: 'Professional', validityPeriodDays: 365, isMandatory: false, duration: '8 hours', provider: 'Internal' },
+        { title: 'ISO 9001 Quality Management', category: 'Compliance', validityPeriodDays: 730, isMandatory: true, duration: '12 hours', provider: 'External' },
       ];
-      
-      for (const course of courses) {
-        await storage.createCourse({
+
+      const courses: any[] = [];
+      for (const course of courseData) {
+        const created = await storage.createCourse({
           ...course,
           tenantId: 'default',
           isActive: true,
         });
+        courses.push(created);
       }
+
+      // Get existing users from DB (should have demo users already)
+      const allUsers = await storage.getAllUsers('default');
+      const employees = allUsers.filter(u => u.role === 'employee').slice(0, 10);
       
-      await auditLog(req.user!.id, 'create', 'seed_data', 'all', null, { departments: 2, courses: courses.length }, req);
-      
-      res.json({ 
-        success: true, 
-        message: 'Seed data created successfully',
-        departments: 2,
+      // Create enrollments (30+)
+      let enrollmentCount = 0;
+      for (const employee of employees) {
+        for (let i = 0; i < 3; i++) {
+          const courseIdx = Math.floor(Math.random() * courses.length);
+          const course = courses[courseIdx];
+          const enrollDate = new Date();
+          enrollDate.setDate(enrollDate.getDate() - Math.floor(Math.random() * 100));
+          const expiryDate = new Date(enrollDate);
+          expiryDate.setDate(expiryDate.getDate() + course.validityPeriodDays);
+
+          try {
+            await storage.createEnrollment({
+              userId: employee.id,
+              courseId: course.id,
+              expiresAt: expiryDate,
+              status: 'active',
+              certificateNumber: `CERT-${Date.now()}-${i}`,
+              tenantId: 'default',
+            });
+            enrollmentCount++;
+          } catch (e) {
+            // Silently skip duplicate enrollments
+          }
+        }
+      }
+
+      // Create renewal requests (15+)
+      const enrollments = await storage.getAllEnrollments('default');
+      let renewalCount = 0;
+      for (let i = 0; i < Math.min(15, enrollments.length); i++) {
+        const enrollment = enrollments[i];
+        try {
+          await storage.createRenewalRequest({
+            enrollmentId: enrollment.id,
+            requestedBy: enrollment.userId,
+            status: i % 3 === 0 ? 'pending' : i % 3 === 1 ? 'foreman_approved' : 'completed',
+            tenantId: 'default',
+          });
+          renewalCount++;
+        } catch (e) {
+          // Silently skip
+        }
+      }
+
+      // Create notifications (10+)
+      let notificationCount = 0;
+      for (const employee of employees.slice(0, 5)) {
+        for (let i = 0; i < 2; i++) {
+          try {
+            await storage.createNotification({
+              userId: employee.id,
+              type: i === 0 ? 'expiry_warning' : 'renewal_request',
+              title: i === 0 ? 'Course Expiring Soon' : 'Renewal Request',
+              message: i === 0 ? `Your course expires in ${30 - i} days` : 'A renewal request is pending your approval',
+              tenantId: 'default',
+            });
+            notificationCount++;
+          } catch (e) {
+            // Silently skip
+          }
+        }
+      }
+
+      await auditLog(req.user!.id, 'create', 'seed_demo_v2', 'all', null, {
+        departments: 3,
         courses: courses.length,
+        enrollments: enrollmentCount,
+        renewals: renewalCount,
+        notifications: notificationCount,
+      }, req);
+
+      res.json({
+        success: true,
+        message: 'Demo data v2 seeded successfully (idempotent)',
+        data: {
+          departments: 3,
+          courses: courses.length,
+          enrollments: enrollmentCount,
+          renewalRequests: renewalCount,
+          notifications: notificationCount,
+          existingUsers: allUsers.length,
+        }
       });
     } catch (error) {
-      console.error("Seed data error:", error);
+      console.error("Seed demo v2 error:", error);
+      res.status(500).json({ error: "Failed to seed demo data", details: String(error) });
+    }
+  });
+
+  // Keep old seed endpoint for backwards compatibility
+  app.post("/api/seed", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+    try {
+      const depts = await storage.getAllDepartments('default');
+      if (depts.length > 0) {
+        return res.json({ success: true, message: 'Already seeded' });
+      }
+      
+      const dept1 = await storage.createDepartment({ name: 'Engineering', code: 'ENG', tenantId: 'default' });
+      const dept2 = await storage.createDepartment({ name: 'Operations', code: 'OPS', tenantId: 'default' });
+
+      const courseData = [
+        { title: 'Safety Fundamentals', category: 'Safety', validityPeriodDays: 365, isMandatory: true, duration: '4h', provider: 'Internal' },
+        { title: 'Leadership', category: 'Professional', validityPeriodDays: 730, isMandatory: false, duration: '24h', provider: 'Internal' },
+      ];
+
+      for (const course of courseData) {
+        await storage.createCourse({ ...course, tenantId: 'default', isActive: true });
+      }
+
+      res.json({ success: true, message: 'Seed data created', departments: 2, courses: courseData.length });
+    } catch (error) {
       res.status(500).json({ error: "Failed to seed data" });
     }
   });
