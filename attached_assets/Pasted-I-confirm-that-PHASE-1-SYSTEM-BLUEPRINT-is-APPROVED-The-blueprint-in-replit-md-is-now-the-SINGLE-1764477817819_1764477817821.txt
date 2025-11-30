@@ -1,0 +1,315 @@
+I confirm that PHASE 1 – SYSTEM BLUEPRINT is APPROVED.
+
+The blueprint in replit.md is now the SINGLE SOURCE OF TRUTH for TrainFlow.
+
+We are now moving into IMPLEMENTATION PHASES to get a WORKING, DEMO-READY platform with realistic seed data.
+
+You MUST strictly follow:
+
+- Interoris Universal Protocol
+- Interoris Phase Execution Protocol
+- Rock Technology Project Protocol
+- The approved Blueprint in replit.md
+
+============================================================
+OVERALL GOAL FOR THIS EXECUTION ROUND
+============================================================
+
+Goal:
+- Implement the **core TrainFlow platform** according to the blueprint
+- Deliver an end-to-end **demo-ready system** with:
+  - Auth + RBAC + Tenancy
+  - Core domain features (courses, enrollments, renewals, tasks, KPIs)
+  - Minimal but functional UI
+  - Background jobs for expiration & notifications
+  - Basic AI stubs (no heavy models)
+  - Integration layer skeleton
+  - **Tenant-aware, idempotent seed data** for demo usage
+
+IMPORTANT:
+- This execution round should NOT implement ALL 21 phases.
+- Focus only on a **vertical MVP slice** that is usable end-to-end.
+
+We will do this as **3 phases** within this run:
+
+- Phase 2 – Foundation & Setup
+- Phase 3 – Core Domain & Workflows (MVP)
+- Phase 4 – Demo Seed Data & Basic AI Stubs
+
+STOP after Phase 4 and summarize.
+
+============================================================
+PHASE 2 – FOUNDATION & SETUP (DO NOW)
+============================================================
+
+Objective:
+- Create the technical foundation for backend + frontend + migrations according to the blueprint.
+
+Scope (INCLUDED):
+
+Backend:
+- Initialize FastAPI project structure EXACTLY following the folder/module layout in the blueprint.
+- Set up:
+  - SQLAlchemy Base & session management
+  - Alembic with additive-only migration strategy
+  - Config management (env-based)
+  - Structured logging (with tenant_id/user/route)
+  - Security middleware skeleton:
+    - CSP
+    - HSTS
+    - X-Frame-Options
+    - X-Content-Type-Options
+  - Tenant resolution middleware skeleton (no full logic yet, but hooks ready)
+  - RBAC middleware skeleton (hooks for roles/capabilities)
+- Implement ONLY these endpoints with real logic:
+  - `/api/health`
+  - `/api/health/detailed`
+- Create placeholder routers (empty or simple stubs) for all bounded contexts defined in the blueprint (users, departments, courses, enrollments, renewals, tasks, kpi, ai, integrations, etc.), but do NOT implement their domain logic yet.
+
+Database:
+- Implement Alembic initial migration with ONLY:
+  - `tenants` table
+  - `users` table
+- Ensure:
+  - All tables include tenant_id
+  - Migrations are additive-only
+
+Frontend:
+- Initialize React + Vite + TypeScript project.
+- Configure:
+  - TailwindCSS
+  - ShadCN UI
+- Implement:
+  - Basic app shell & layout
+  - React Router with:
+    - `/` (Dashboard placeholder)
+    - `/login` (Auth placeholder)
+  - Zustand store structure (empty slices per bounded context)
+
+Constraints:
+- No domain logic yet (no renewals, KPIs, AI, etc.).
+- No destructive migrations.
+- No Node.js or Express (Python/FastAPI only).
+- Follow blueprint file structure strictly.
+
+Deliverables:
+- Backend server starts successfully with health endpoints working.
+- Frontend starts with a basic layout and routes.
+- Alembic can run the initial migration.
+
+When Phase 2 is done:
+- Commit changes.
+- Continue AUTOMATICALLY to Phase 3.
+
+============================================================
+PHASE 3 – CORE DOMAIN & WORKFLOWS (MVP)
+============================================================
+
+Objective:
+- Implement a MINIMUM but fully working vertical slice of TrainFlow:
+  - Auth + tenancy + RBAC
+  - Core entities
+  - Renewal workflow
+  - KPI basics
+  - UI flows for Employee, Foreman, Manager, Training Officer, Admin
+
+Scope (INCLUDED):
+
+Backend – Domain Models & APIs:
+- Implement database tables & models (with Alembic migrations) for:
+  - tenants
+  - users
+  - departments
+  - courses
+  - enrollments
+  - renewal_requests
+  - progression_tasks
+  - employee_tasks
+  - notifications
+  - audit_logs
+  - kpi_snapshots
+- Implement authentication:
+  - Login endpoint (e.g. /api/auth/login) – can be simple username/password for now
+  - Logout
+  - Current user endpoint `/api/auth/me`
+  - JWT or session with HttpOnly + Secure cookies
+- Implement multi-tenant isolation:
+  - All queries filtered by tenant_id
+  - Tenant resolution middleware applies for all routes
+- Implement RBAC:
+  - Roles: Employee, Foreman, Manager, Training Officer, Admin
+  - Enforce role checks on:
+    - user/department/course/enrollment/renewal/kpi APIs
+- Implement APIs for:
+  - Users (basic CRUD for Admin)
+  - Departments (CRUD for Admin)
+  - Courses (CRUD for Training Officer/Admin)
+  - Enrollments (assign course to user, basic status)
+  - Renewal Requests:
+    - Create by Employee
+    - List “my renewals”
+    - Approve/Reject by Foreman/Manager
+  - Progression Tasks (CRUD by Admin/Training Officer)
+  - Employee Tasks (assignment & completion status)
+  - Basic KPIs:
+    - `/api/kpi/summary` per user (task %, training %, expired ratio)
+- Implement:
+  - Audit logging for main actions (login, CRUD, approval)
+  - Background job:
+    - Daily course expiration check
+    - Create notifications for expiring courses
+    - Escalate to Foreman if ignored
+
+Frontend – Pages & Flows:
+- Implement minimum functional pages:
+  - `/login`
+  - `/` (Dashboard – different widgets per role)
+  - `/my-courses`
+  - `/my-renewals`
+  - `/progression`
+  - `/approvals` (Foreman/Manager)
+  - `/team` (Foreman/Manager)
+  - `/courses` (Training Officer/Admin)
+  - `/enrollments` (Training Officer/Admin)
+  - `/users` (Admin)
+  - `/departments` (Admin)
+  - `/kpi-dashboard` (basic KPIs per role)
+- Use Zustand for:
+  - Auth state
+  - Current user/role
+  - Tenant context
+  - Basic store slices (users, courses, enrollments, renewals, kpis)
+
+Constraints:
+- No Skill Graph yet.
+- No Career Path AI yet.
+- No SCORM.
+- No Security Awareness Simulator.
+- No heavy AI pipelines (just stubs allowed).
+- All migrations ADDITIVE-only.
+
+Deliverables:
+- You can:
+  - Log in as different roles
+  - Assign courses
+  - Submit renewal requests
+  - Approve/reject them
+  - View basic KPIs
+- All flows WORK END-TO-END for a single demo tenant.
+
+After Phase 3:
+- Continue AUTOMATICALLY to Phase 4 (Demo Seed Data & AI stubs).
+
+============================================================
+PHASE 4 – DEMO SEED DATA & BASIC AI STUBS
+============================================================
+
+Objective:
+- Make the system DEMO-READY with realistic, tenant-aware seed data and basic AI placeholder behavior.
+
+Scope (INCLUDED):
+
+Seed Data (DEV/DEMO ONLY):
+- Implement a safe, idempotent seed script or endpoint (e.g. `/api/admin/seed-demo`) that:
+  - Creates ONE demo tenant:
+    - tenant: “DemoCorp” (or similar)
+  - Creates departments:
+    - “ERTMD”
+    - “TMSD”
+    - “JTMD”
+  - Creates users:
+    - 1 Administrator
+    - 1 Training Officer
+    - 2 Managers (e.g. Operations, Maintenance)
+    - 3 Foremen
+    - 8–12 Employees
+  - Creates sample courses:
+    - “Basic Safety Orientation”
+    - “Electrical Safety L2”
+    - “First Aid & CPR”
+    - “SCADA Fundamentals”
+    - “Cyber Security Awareness”
+  - Creates enrollments:
+    - Some completed
+    - Some active
+    - Some nearing expiration
+    - Some expired
+  - Creates progression tasks:
+    - Per grade: list of required tasks
+  - Creates employee tasks:
+    - Some completed
+    - Some in-progress
+  - Creates renewal_requests:
+    - New
+    - Pending
+    - Approved
+    - Rejected
+  - Populates KPI snapshots:
+    - Enough data to show meaningful KPIs on the dashboard.
+- Requirements:
+  - Seed must be:
+    - Idempotent (running twice doesn’t duplicate data)
+    - Tenant-aware (all data belongs to demo tenant)
+    - Non-destructive (no deletes of existing real data)
+
+Basic AI Stubs:
+- Implement lightweight, deterministic AI stubs (no real heavy model) for:
+  - `/api/ai/recommendations`:
+    - Return recommended courses based on:
+      - Missing required courses
+      - Upcoming expirations
+      - Progression tasks not fulfilled
+  - `/api/ai/grade-readiness`:
+    - Return a basic readiness score based on:
+      - Task completion ratio
+      - Required courses completed
+      - Expired vs valid courses
+- These stubs must be:
+  - Implemented via background job triggers (or simple simulated async)
+  - NOT block UI
+  - Easy to later replace with real AI models
+
+Frontend:
+- Add a simple “Demo Mode” note (e.g., on dashboard) indicating demo tenant.
+- Make sure demo users/roles are documented somewhere (e.g., in README or a “Demo Info” component).
+
+Constraints:
+- Demo seeding MUST NOT run automatically in production.
+- No destructive operations.
+- Any “seed endpoint” must be protected and clearly marked as DEV/DEMO only.
+
+Deliverables:
+- A developer can:
+  - Run the backend + frontend
+  - Trigger demo seeding (via CLI script or admin endpoint)
+  - Log in using demo accounts
+  - Navigate main flows:
+    - View courses
+    - See expiring trainings
+    - Submit & approve renewals
+    - View KPIs
+    - Call basic AI endpoints and see “smart” but simple behavior
+
+============================================================
+GLOBAL CONSTRAINTS FOR ALL PHASES
+============================================================
+
+- Follow the blueprint EXACTLY.
+- No Node.js backend, no Express, no Drizzle, no Prisma.
+- Python + FastAPI + SQLAlchemy only.
+- All tables include tenant_id, all queries tenant-scoped.
+- No destructive migrations (DROP/CASCADE/etc.).
+- AI code must remain separated (pipelines/jobs).
+- Keep code modular and aligned with bounded contexts.
+
+============================================================
+WHEN YOU FINISH PHASE 4
+============================================================
+
+- STOP.
+- Summarize:
+  - What was implemented in Phases 2–4.
+  - How to run the backend & frontend.
+  - How to run or trigger the demo seed.
+  - Demo login credentials for each role.
+- Wait for my next instructions before starting more phases (Skill Graph, Career AI, SCORM, Security Simulator, etc.).
