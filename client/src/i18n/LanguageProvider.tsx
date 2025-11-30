@@ -12,7 +12,6 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>("en");
-  const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("trainflow_lang") as Language | null;
@@ -20,7 +19,6 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     setLanguageState(lang);
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
     document.documentElement.lang = lang;
-    setIsHydrated(true);
   }, []);
 
   const setLanguage = (lang: Language) => {
@@ -33,10 +31,6 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const toggleLanguage = () => {
     setLanguage(language === "en" ? "ar" : "en");
   };
-
-  if (!isHydrated) {
-    return <>{children}</>;
-  }
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage, toggleLanguage }}>

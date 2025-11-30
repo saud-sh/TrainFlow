@@ -1,0 +1,155 @@
+You are working on the existing TrainFlow project deployed at https://training.rocktech.sa.
+
+I believe everything is almost done. I now want a **full QUALITY & INTEGRATION AUDIT** to confirm that:
+
+- Backend ↔ Frontend integration is correct
+- Database data is actually used in all screens
+- Auth, sessions, and role-based routing are stable
+- No mock/placeholder data is left
+- All critical CRUD flows work end-to-end
+
+IMPORTANT GUARDRAILS – DO NOT BREAK:
+- Do NOT change the visual design or layout of the landing page, dashboard, or sidebar.
+- Do NOT change route paths (/, /login, /dashboard, /users, /departments, /enrollments, /all-renewals, /kpi-dashboard, etc.).
+- Do NOT remove the existing email/password auth we implemented (admin@democorp.local / TrainFlow123! and other demo accounts).
+- Do NOT revert to Replit OAuth.
+- Do NOT drop database tables or wipe existing rows – only add or adjust data if needed.
+- Keep the current role system exactly as designed (admin, training officer, manager, foreman, employee).
+
+Your mission: **Verify that everything works as a real production-style app. If you find any bug or mismatch, FIX IT – but only with the minimum necessary code changes.**
+
+==================================================
+1) AUTH + SESSION + ROUTING VERIFICATION
+==================================================
+1. Inspect the auth flow:
+   - /api/v1/users/login
+   - /api/v1/users/me
+   - Any auth middleware / session code (server/replitAuth.ts or similar).
+2. Confirm this complete flow works in code AND in practice:
+   - Visit `/login`
+   - Login with `admin@democorp.local / TrainFlow123!`
+   - Session cookie is set correctly.
+   - `/api/v1/users/me` returns the correct user (id, email, role, firstName, lastName, etc.).
+   - User is redirected to `/dashboard`.
+   - After refresh, user stays logged in (session persists).
+3. Check role-based behaviour:
+   - Using existing demo accounts (manager, foreman, employee), confirm:
+     - They can reach `/dashboard`.
+     - They CANNOT access pages they should not (e.g. employee cannot open `/users`).
+     - The sidebar items match their role.
+4. If any of the above fails:
+   - Fix the issue with minimal modifications (e.g. cookie options, /me endpoint logic, router guards, useAuth hook).
+   - Make sure there is **no infinite loop** of unauthorized calls in the browser console.
+
+==================================================
+2) BACKEND ↔ FRONTEND DATA INTEGRATION
+==================================================
+I want to be sure the frontend is **fully driven by real data from Postgres**, not mock arrays.
+
+1. Verify which DB is used (env DATABASE_URL) and confirm it matches the DB that has tables:
+   - users, departments, courses, enrollments,
+   - renewal_requests, notifications, ai_recommendations,
+   - audit_logs, sessions, etc.
+2. For every main screen, confirm it calls a real API and renders the response:
+
+   - `/users` (User Management):
+     - Uses GET /api/v1/users.
+     - Shows real users from the `users` table.
+     - Counts at the top (Total Users / Employees / Supervisors / Admin Staff) reflect real DB numbers.
+
+   - `/departments`:
+     - Uses GET /api/v1/departments.
+     - Shows real departments from DB.
+
+   - `/courses` (Course Management):
+     - Uses GET /api/v1/courses.
+
+   - `/enrollments`:
+     - Table uses GET /api/v1/enrollments.
+     - “New Enrollment” dialog:
+       - Employee dropdown filled from real users (role = employee).
+       - Course dropdown filled from real courses.
+       - Creating an enrollment sends POST /api/v1/enrollments and actually inserts into `enrollments` table.
+
+   - `/all-renewals` / approvals pages:
+     - Show real `renewal_requests` rows from DB.
+     - Approve/Reject actions update DB and UI.
+
+   - Dashboard `/dashboard` & `/kpi-dashboard`:
+     - Tiles and charts show real counts/aggregations from DB (or computed in the backend).
+     - No hardcoded zeros.
+
+3. If you find **any page** still using placeholder data or not calling an API:
+   - Implement/adjust the API call.
+   - Wire the response to the UI.
+   - Make sure requests include `credentials: "include"` so sessions work.
+
+==================================================
+3) CRUD FLOWS – END-TO-END TEST
+==================================================
+For each key feature, ensure create/update flows really touch the DB:
+
+- User Management:
+  - Creating a user via the UI inserts into `users` table.
+  - Editing user (role, status, etc.) persists to DB.
+- Departments:
+  - Creating/editing departments via UI writes to `departments`.
+- Courses:
+  - Creating/editing courses writes to `courses`.
+- Enrollments:
+  - New enrollment persists to `enrollments` and appears in UI immediately.
+- Renewals:
+  - New renewal request is saved.
+  - Approve/Reject updates its status.
+
+If any endpoint is missing or returns wrong shape:
+- Add/fix ONLY what is needed to make the UI work (no big refactors).
+
+==================================================
+4) DEMO DATA HEALTH CHECK
+==================================================
+1. Check that demo seed logic or seed endpoint (e.g. `/api/v1/users/seed-demo` or `/api/v1/admin/seed-demo-v2`) is:
+   - Idempotent (no duplicate emails on repeated calls).
+   - Creates a healthy set of demo data:
+     - multiple departments,
+     - admins / training officers / managers / foremen / employees,
+     - enough courses and enrollments,
+     - some renewal_requests and notifications.
+2. If demo data is too thin or inconsistent (e.g. empty departments):
+   - Safely add more records (without deleting existing ones).
+3. Update `replit.md` with:
+   - Demo endpoints (seed URLs).
+   - Demo login credentials for each role.
+   - Very short note of what data is created.
+
+==================================================
+5) FINAL QA CHECKLIST
+==================================================
+Before you stop, run through this exact checklist and ensure **ALL** are true:
+
+- [ ] `/` shows the marketing landing page (public).
+- [ ] `/login` shows the email/password login screen and works for all demo users.
+- [ ] After login, user lands on `/dashboard` and sees sidebar + greeting.
+- [ ] Refreshing `/dashboard` keeps the user logged in.
+- [ ] `/users` shows rows from DB, not “No users found” when DB has data.
+- [ ] `/enrollments` dialog shows employees + courses from DB.
+- [ ] Creating an enrollment updates both UI and DB.
+- [ ] `/departments` lists real departments from DB.
+- [ ] `/all-renewals` and approvals show real data and update DB on actions.
+- [ ] Different roles see correct sidebar + access (admin vs manager vs employee).
+- [ ] Browser console has no repeating 401/404/500 errors after login.
+
+If anything in the checklist fails:
+- Fix it with minimal, targeted changes.
+- Then re-run the checklist.
+
+At the end, add a short section at the top of `replit.md` called:
+> “System Health – 30 Nov 2025”
+
+In that section, briefly confirm:
+- Frontend is fully wired to backend.
+- DB tables in use.
+- Auth, sessions, and roles verified.
+- Seed/demo data endpoint and credentials.
+
+Do NOT over-engineer anything. Just make sure the system is **solid, consistent, and fully functional using real database data and correct routes.**
