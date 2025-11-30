@@ -135,9 +135,17 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // Check for email/password session-based auth first
+  const sessionUser = (req.session as any)?.user;
+  if (sessionUser && sessionUser.id) {
+    (req as any).user = sessionUser;
+    return next();
+  }
+
+  // Fall back to Passport auth for OAuth
   const user = req.user as any;
 
-  if (!req.isAuthenticated() || !user.expires_at) {
+  if (!req.isAuthenticated() || !user?.expires_at) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
