@@ -140,6 +140,33 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/v1/users/me", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ detail: "Unauthorized" });
+      }
+      
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(401).json({ detail: "User not found" });
+      }
+      
+      res.json({
+        id: user.id,
+        role: user.role,
+        email: user.email,
+        user_id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        tenant_id: user.tenantId,
+        department_id: user.departmentId,
+      });
+    } catch (error) {
+      console.error("Get current user error:", error);
+      res.status(500).json({ detail: "Failed to fetch user" });
+    }
+  });
+
   app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     res.json(req.user);
   });

@@ -4,10 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 interface User {
   id: string;
   email: string;
-  first_name?: string;
-  last_name?: string;
   role: string;
-  tenant_id: string;
+  firstName?: string;
+  lastName?: string;
+  tenant_id?: string;
   department_id?: string;
 }
 
@@ -46,6 +46,10 @@ export function useAuth() {
     const userData = await res.json();
     // Invalidate the cache to trigger a refetch of the user
     await queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    
+    // Wait for the refetch to complete so user data is available
+    await queryClient.refetchQueries({ queryKey: QUERY_KEY });
+    
     return userData;
   };
 
