@@ -286,46 +286,40 @@ export const insertUserSchema = createInsertSchema(users).omit({
 });
 
 export const insertDepartmentSchema = createInsertSchema(departments).omit({
-  id: true,
   createdAt: true,
 });
 
 export const insertCourseSchema = createInsertSchema(courses).omit({
-  id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertEnrollmentSchema = createInsertSchema(enrollments).omit({
-  id: true,
+export const insertEnrollmentSchema = createInsertSchema(enrollments, {
+  expiresAt: z.coerce.date(),
+}).omit({
   enrolledAt: true,
 });
 
 export const insertRenewalRequestSchema = createInsertSchema(renewalRequests).omit({
-  id: true,
   requestedBy: true,
   createdAt: true,
   updatedAt: true,
 });
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
-  id: true,
   createdAt: true,
 });
 
 export const insertProgressionTaskSchema = createInsertSchema(progressionTasks).omit({
-  id: true,
   createdAt: true,
   updatedAt: true,
 });
 
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
-  id: true,
   createdAt: true,
 });
 
 export const insertAiRecommendationSchema = createInsertSchema(aiRecommendations).omit({
-  id: true,
   createdAt: true,
 });
 
@@ -344,7 +338,7 @@ export type Enrollment = typeof enrollments.$inferSelect;
 export type InsertEnrollment = z.infer<typeof insertEnrollmentSchema>;
 
 export type RenewalRequest = typeof renewalRequests.$inferSelect;
-export type InsertRenewalRequest = z.infer<typeof insertRenewalRequestSchema>;
+export type InsertRenewalRequest = typeof renewalRequests.$inferInsert;
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;

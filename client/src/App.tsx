@@ -205,7 +205,7 @@ function Router() {
       </Route>
 
       <Route path="/users">
-        <ProtectedRoute requiredRoles={["administrator"]}>
+        <ProtectedRoute requiredRoles={["administrator", "manager"]}>
           <AuthenticatedLayout>
             <Users />
           </AuthenticatedLayout>
@@ -245,7 +245,7 @@ function Router() {
       </Route>
 
       <Route path="/departments">
-        <ProtectedRoute requiredRoles={["administrator"]}>
+        <ProtectedRoute requiredRoles={["administrator", "manager"]}>
           <AuthenticatedLayout>
             <Departments />
           </AuthenticatedLayout>

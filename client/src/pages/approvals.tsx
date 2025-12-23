@@ -1,3 +1,4 @@
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,16 +32,17 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
-import { 
-  ClipboardCheck, 
-  Search, 
+import {
+  ClipboardCheck,
+  Search,
   CheckCircle2,
   XCircle,
   Clock,
   User,
   BookOpen,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  ArrowRight
 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import type { RenewalRequest, Enrollment, Course, User as UserType } from "@shared/schema";
@@ -58,6 +60,7 @@ interface RenewalWithDetails extends RenewalRequest {
 
 export default function Approvals() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("pending");
@@ -77,7 +80,7 @@ export default function Approvals() {
     queryKey: ["/api/renewals"],
   });
 
-  const processedApprovals = allRenewals.filter(r => 
+  const processedApprovals = allRenewals.filter(r =>
     r.status === 'manager_approved' || r.status === 'rejected' || r.status === 'completed'
   );
 
@@ -244,7 +247,7 @@ export default function Approvals() {
                         <StatusBadge status={renewal.status} />
                         <Button
                           variant="outline"
-                          onClick={() => setSelectedRenewal(renewal)}
+                          onClick={() => setLocation(`/approvals/${renewal.id}`)}
                           data-testid={`button-review-${renewal.id}`}
                         >
                           Review
@@ -278,7 +281,12 @@ export default function Approvals() {
           ) : (
             <div className="space-y-4">
               {filterRenewals(processedApprovals).map((renewal) => (
-                <Card key={renewal.id} data-testid={`processed-card-${renewal.id}`}>
+                <Card
+                  key={renewal.id}
+                  data-testid={`processed-card-${renewal.id}`}
+                  className="hover-elevate cursor-pointer"
+                  onClick={() => setLocation(`/approvals/${renewal.id}`)}
+                >
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-4">
@@ -301,7 +309,10 @@ export default function Approvals() {
                           </p>
                         </div>
                       </div>
-                      <StatusBadge status={renewal.status} />
+                      <div className="flex items-center gap-4">
+                        <StatusBadge status={renewal.status} />
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

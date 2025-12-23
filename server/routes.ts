@@ -1,11 +1,12 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated } from "./auth";
 import {
   insertCourseSchema, insertEnrollmentSchema, insertRenewalRequestSchema,
   insertProgressionTaskSchema, insertDepartmentSchema, insertNotificationSchema,
-  type UserRole, type User
+  insertUserSchema,
+  type UserRole, type User as DrizzleUser
 } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
@@ -18,12 +19,11 @@ import {
   generateJSONExport, verifyDepartmentTenant
 } from "./reports";
 
-// Extend Express Request to include user
+// Extend Express User to include our schema User type
 declare global {
   namespace Express {
-    interface Request {
-      user?: User & { id: string; role: UserRole; tenantId: string };
-    }
+    // eslint-disable-next-line @typescript-eslint/no-empty-interface
+    interface User extends DrizzleUser { }
   }
 }
 
@@ -95,31 +95,33 @@ export async function registerRoutes(
   // =====================
   // AUTH ROUTES
   // =====================
+
+
   app.post("/api/v1/users/login", async (req: Request, res: Response) => {
     try {
       const { email, password } = req.body;
-      
+
       if (!email || !password) {
         return res.status(400).json({ detail: "Email and password required" });
       }
-      
+
       const user = await storage.getUserByEmail(email);
       if (!user || !user.password) {
         return res.status(401).json({ detail: "Invalid email or password" });
       }
-      
+
       const passwordMatch = await bcrypt.compare(password, user.password);
       if (!passwordMatch) {
         return res.status(401).json({ detail: "Invalid email or password" });
       }
-      
+
       if (!user.isActive) {
         return res.status(403).json({ detail: "User account is inactive" });
       }
-      
+
       // Log the login
       await auditLog(user.id, 'login', 'user', user.id, null, null, req);
-      
+
       // Store user in session directly (not using Passport)
       (req.session as any).user = {
         id: user.id,
@@ -130,14 +132,14 @@ export async function registerRoutes(
         tenantId: user.tenantId,
         departmentId: user.departmentId,
       };
-      
+
       // Save session explicitly
       req.session.save((err) => {
         if (err) {
           console.error("Session save error:", err);
           return res.status(500).json({ detail: "Login failed" });
         }
-        
+
         res.json({
           role: user.role,
           email: user.email,
@@ -168,25 +170,9 @@ export async function registerRoutes(
           department_id: sessionUser.departmentId,
         });
       }
-      
-      // Fall back to Passport/OIDC authentication for backward compatibility
-      if (req.isAuthenticated() && req.user && (req.user as any).claims?.sub) {
-        const userId = (req.user as any).claims.sub;
-        const user = await storage.getUser(userId);
-        if (user) {
-          return res.json({
-            id: user.id,
-            role: user.role,
-            email: user.email,
-            user_id: user.id,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            tenant_id: user.tenantId,
-            department_id: user.departmentId,
-          });
-        }
-      }
-      
+
+
+
       // Not authenticated
       return res.status(401).json({ detail: "Unauthorized" });
     } catch (error) {
@@ -235,7 +221,38 @@ export async function registerRoutes(
   // =====================
   // USER ROUTES
   // =====================
-  app.get("/api/users", isAuthenticated, requireRole('administrator', 'training_officer'), async (req: Request, res: Response) => {
+  app.post("/api/users", isAuthenticated, requireRole('administrator', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const data = insertUserSchema.parse(req.body);
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(data.email);
+      if (existingUser) {
+        return res.status(409).json({ error: "User with this email already exists" });
+      }
+
+      // Hash password if provided, or use default
+      const password = data.password ? await bcrypt.hash(data.password, 10) : await bcrypt.hash("password123", 10);
+
+      const newUser = await storage.createUser({
+        ...data,
+        password,
+        tenantId: req.user!.tenantId || 'default',
+        role: data.role || 'employee',
+      });
+
+      await auditLog(req.user!.id, 'create', 'user', newUser.id, null, newUser, req);
+      res.status(201).json(newUser);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Create user error:", error);
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  app.get("/api/users", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
     try {
       const users = await storage.getAllUsers(req.user!.tenantId || 'default');
       res.json(users);
@@ -258,7 +275,28 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/users/:id", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+  app.delete("/api/users/:id", isAuthenticated, requireRole('administrator', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Prevent deleting self
+      if (user.id === req.user!.id) {
+        return res.status(400).json({ error: "Cannot delete your own account" });
+      }
+
+      await storage.deleteUser(req.params.id);
+      await auditLog(req.user!.id, 'delete', 'user', req.params.id, user, null, req);
+      res.sendStatus(204);
+    } catch (error) {
+      console.error("Delete user error:", error);
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  app.patch("/api/users/:id", isAuthenticated, requireRole('administrator', 'manager'), async (req: Request, res: Response) => {
     try {
       const oldUser = await storage.getUser(req.params.id);
       const updated = await storage.updateUser(req.params.id, req.body);
@@ -286,7 +324,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/departments", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
+  app.post("/api/departments", isAuthenticated, requireRole('administrator', 'manager'), async (req: Request, res: Response) => {
     try {
       const data = insertDepartmentSchema.parse(req.body);
       const department = await storage.createDepartment({
@@ -301,6 +339,40 @@ export async function registerRoutes(
       }
       console.error("Create department error:", error);
       res.status(500).json({ error: "Failed to create department" });
+    }
+  });
+
+  app.patch("/api/departments/:id", isAuthenticated, requireRole('administrator', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const oldDept = await storage.getDepartment(id);
+      if (!oldDept) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+
+      const updated = await storage.updateDepartment(id, req.body);
+      await auditLog(req.user!.id, 'update', 'department', String(id), oldDept, updated, req);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update department error:", error);
+      res.status(500).json({ error: "Failed to update department" });
+    }
+  });
+
+  app.delete("/api/departments/:id", isAuthenticated, requireRole('administrator', 'manager'), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const dept = await storage.getDepartment(id);
+      if (!dept) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+
+      await storage.deleteDepartment(id);
+      await auditLog(req.user!.id, 'delete', 'department', String(id), dept, null, req);
+      res.sendStatus(204);
+    } catch (error) {
+      console.error("Delete department error:", error);
+      res.status(500).json({ error: "Failed to delete department" });
     }
   });
 
@@ -378,7 +450,7 @@ export async function registerRoutes(
     try {
       const { userId, courseId, expiring } = req.query;
       let enrollmentList;
-      
+
       if (userId && typeof userId === 'string') {
         enrollmentList = await storage.getEnrollmentsByUser(userId);
       } else if (courseId) {
@@ -415,16 +487,16 @@ export async function registerRoutes(
   app.post("/api/enrollments", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
     try {
       const data = insertEnrollmentSchema.parse(req.body);
-      
+
       // Calculate expiry date based on course validity
       const course = await storage.getCourse(data.courseId);
       if (!course) {
         return res.status(400).json({ error: "Course not found" });
       }
-      
+
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + course.validityPeriodDays);
-      
+
       const enrollment = await storage.createEnrollment({
         ...data,
         expiresAt,
@@ -463,17 +535,17 @@ export async function registerRoutes(
     try {
       const { status } = req.query;
       let renewals;
-      
+
       if (req.user!.role === 'administrator' || req.user!.role === 'training_officer') {
         renewals = await storage.getAllRenewalRequests(req.user!.tenantId || 'default');
       } else {
         renewals = await storage.getRenewalRequestsByUser(req.user!.id);
       }
-      
+
       if (status && typeof status === 'string') {
         renewals = renewals.filter(r => r.status === status);
       }
-      
+
       res.json(renewals);
     } catch (error) {
       console.error("Get renewals error:", error);
@@ -491,8 +563,8 @@ export async function registerRoutes(
         const requester = await storage.getUser(r.requestedBy);
         const foreman = r.foremanId ? await storage.getUser(r.foremanId) : null;
         const manager = r.managerId ? await storage.getUser(r.managerId) : null;
-        return { 
-          ...r, 
+        return {
+          ...r,
           enrollment: enrollment ? { ...enrollment, course } : null,
           requester,
           foreman,
@@ -516,8 +588,8 @@ export async function registerRoutes(
         const requester = await storage.getUser(r.requestedBy);
         const foreman = r.foremanId ? await storage.getUser(r.foremanId) : null;
         const manager = r.managerId ? await storage.getUser(r.managerId) : null;
-        return { 
-          ...r, 
+        return {
+          ...r,
           enrollment: enrollment ? { ...enrollment, course } : null,
           requester,
           foreman,
@@ -531,6 +603,34 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/renewals/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const renewal = await storage.getRenewalRequest(id);
+      if (!renewal) {
+        return res.status(404).json({ error: "Renewal request not found" });
+      }
+
+      // Enrich with enrollment (including course), requester, foreman, manager data
+      const enrollment = await storage.getEnrollment(renewal.enrollmentId);
+      const course = enrollment ? await storage.getCourse(enrollment.courseId) : null;
+      const requester = await storage.getUser(renewal.requestedBy);
+      const foreman = renewal.foremanId ? await storage.getUser(renewal.foremanId) : null;
+      const manager = renewal.managerId ? await storage.getUser(renewal.managerId) : null;
+
+      res.json({
+        ...renewal,
+        enrollment: enrollment ? { ...enrollment, course } : null,
+        requester,
+        foreman,
+        manager,
+      });
+    } catch (error) {
+      console.error("Get renewal details error:", error);
+      res.status(500).json({ error: "Failed to fetch renewal details" });
+    }
+  });
+
   app.post("/api/renewals", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const data = insertRenewalRequestSchema.parse(req.body);
@@ -540,7 +640,7 @@ export async function registerRoutes(
         tenantId: req.user!.tenantId || 'default',
       });
       await auditLog(req.user!.id, 'submit', 'renewal_request', String(renewal.id), null, renewal, req);
-      
+
       // Notify foremen about new renewal request
       const foremen = await storage.getUsersByRole('foreman', req.user!.tenantId || 'default');
       for (const foreman of foremen) {
@@ -554,7 +654,7 @@ export async function registerRoutes(
           tenantId: req.user!.tenantId || 'default',
         });
       }
-      
+
       res.status(201).json(renewal);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -585,7 +685,7 @@ export async function registerRoutes(
           foremanComments: comments || null,
         };
         newStatus = 'foreman_approved';
-        
+
         // Notify managers
         const managers = await storage.getUsersByRole('manager', req.user!.tenantId || 'default');
         for (const manager of managers) {
@@ -607,7 +707,7 @@ export async function registerRoutes(
           managerComments: comments || null,
         };
         newStatus = 'manager_approved';
-        
+
         // Update enrollment status and extend expiry
         const enrollment = await storage.getEnrollment(renewal.enrollmentId);
         if (enrollment) {
@@ -619,7 +719,7 @@ export async function registerRoutes(
             expiresAt: newExpiresAt,
           });
         }
-        
+
         // Notify requester
         await storage.createNotification({
           userId: renewal.requestedBy,
@@ -663,7 +763,7 @@ export async function registerRoutes(
         rejectionReason: reason,
       });
       await auditLog(req.user!.id, 'reject', 'renewal_request', String(id), renewal, updated, req);
-      
+
       // Notify requester
       await storage.createNotification({
         userId: renewal.requestedBy,
@@ -674,7 +774,7 @@ export async function registerRoutes(
         relatedEntityId: id,
         tenantId: req.user!.tenantId || 'default',
       });
-      
+
       res.json(updated);
     } catch (error) {
       console.error("Reject renewal error:", error);
@@ -727,14 +827,14 @@ export async function registerRoutes(
       } else {
         tasks = await storage.getProgressionTasksByUser(req.user!.id);
       }
-      
+
       // Enrich with course data
       const enriched = await Promise.all(tasks.map(async (t) => {
         const course = t.requiredCourseId ? await storage.getCourse(t.requiredCourseId) : null;
         const user = await storage.getUser(t.userId);
         return { ...t, course, user };
       }));
-      
+
       res.json(enriched);
     } catch (error) {
       console.error("Get progression tasks error:", error);
@@ -751,7 +851,7 @@ export async function registerRoutes(
         tenantId: req.user!.tenantId || 'default',
       });
       await auditLog(req.user!.id, 'create', 'progression_task', String(task.id), null, task, req);
-      
+
       // Notify the employee
       await storage.createNotification({
         userId: task.userId,
@@ -762,7 +862,7 @@ export async function registerRoutes(
         relatedEntityId: task.id,
         tenantId: req.user!.tenantId || 'default',
       });
-      
+
       res.status(201).json(task);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -795,7 +895,7 @@ export async function registerRoutes(
     try {
       const { limit, userId, entityType, entityId } = req.query;
       let logs;
-      
+
       if (userId && typeof userId === 'string') {
         logs = await storage.getAuditLogsByUser(userId, parseInt(limit as string) || 50);
       } else if (entityType && entityId && typeof entityType === 'string' && typeof entityId === 'string') {
@@ -803,13 +903,13 @@ export async function registerRoutes(
       } else {
         logs = await storage.getAuditLogs(req.user!.tenantId || 'default', parseInt(limit as string) || 100);
       }
-      
+
       // Enrich with user data
       const enriched = await Promise.all(logs.map(async (log) => {
         const user = log.userId ? await storage.getUser(log.userId) : null;
         return { ...log, user };
       }));
-      
+
       res.json(enriched);
     } catch (error) {
       console.error("Get audit logs error:", error);
@@ -827,13 +927,13 @@ export async function registerRoutes(
         req.user!.id,
         includeProcessed === 'true'
       );
-      
+
       // Enrich with course data
       const enriched = await Promise.all(recommendations.map(async (r) => {
         const course = await storage.getCourse(r.courseId);
         return { ...r, course };
       }));
-      
+
       res.json(enriched);
     } catch (error) {
       console.error("Get recommendations error:", error);
@@ -847,20 +947,20 @@ export async function registerRoutes(
       const enrollments = await storage.getEnrollmentsByUser(req.user!.id);
       const progressionTasks = await storage.getProgressionTasksByUser(req.user!.id);
       const allCourses = await storage.getActiveCourses(req.user!.tenantId || 'default');
-      
+
       // Get enrolled course IDs
       const enrolledCourseIds = new Set(enrollments.map(e => e.courseId));
-      
+
       // Filter to courses not yet enrolled
       const availableCourses = allCourses.filter(c => !enrolledCourseIds.has(c.id));
-      
+
       if (availableCourses.length === 0) {
         return res.json({ message: "You are already enrolled in all available courses!" });
       }
 
       // Use OpenAI to generate personalized recommendations
       const openai = new OpenAI();
-      
+
       const prompt = `You are an AI career development advisor for an enterprise training platform. 
       
       Employee Profile:
@@ -898,7 +998,7 @@ export async function registerRoutes(
 
       const parsed = JSON.parse(content);
       const recommendations = parsed.recommendations || [];
-      
+
       // Save recommendations to database
       const saved = await Promise.all(recommendations.map(async (rec: { courseId: number; reason: string; confidence: number }) => {
         return storage.createRecommendation({
@@ -909,13 +1009,13 @@ export async function registerRoutes(
           tenantId: req.user!.tenantId || 'default',
         });
       }));
-      
+
       // Enrich with course data
       const enriched = await Promise.all(saved.map(async (r) => {
         const course = await storage.getCourse(r.courseId);
         return { ...r, course };
       }));
-      
+
       res.json(enriched);
     } catch (error) {
       console.error("Generate recommendations error:", error);
@@ -931,13 +1031,13 @@ export async function registerRoutes(
       if (!updated) {
         return res.status(404).json({ error: "Recommendation not found" });
       }
-      
+
       // Create enrollment for the accepted recommendation
       const course = await storage.getCourse(updated.courseId);
       if (course) {
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + course.validityPeriodDays);
-        
+
         await storage.createEnrollment({
           userId: req.user!.id,
           courseId: course.id,
@@ -946,7 +1046,7 @@ export async function registerRoutes(
           tenantId: req.user!.tenantId || 'default',
         });
       }
-      
+
       res.json(updated);
     } catch (error) {
       console.error("Accept recommendation error:", error);
@@ -972,48 +1072,48 @@ export async function registerRoutes(
   // =====================
   // AI GRADE READINESS PREDICTOR
   // =====================
-  
+
   app.post("/api/ai/grade-readiness", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const user = req.user!;
       const tenantId = user.tenantId || 'default';
-      
+
       // Gather comprehensive employee data
       const enrollments = await storage.getEnrollmentsByUser(user.id);
       const progressionTasks = await storage.getProgressionTasksByUser(user.id);
       const allCourses = await storage.getActiveCourses(tenantId);
       const department = user.departmentId ? await storage.getDepartment(user.departmentId) : null;
-      
+
       // Calculate training metrics
       const now = new Date();
-      const completedEnrollments = enrollments.filter(e => e.status === 'completed' || 
+      const completedEnrollments = enrollments.filter(e => e.status === 'completed' ||
         (e.status === 'active' && e.completedAt));
       const activeEnrollments = enrollments.filter(e => e.status === 'active' && !e.completedAt);
       const expiredEnrollments = enrollments.filter(e => e.expiresAt && new Date(e.expiresAt) < now);
-      
+
       // Calculate progression metrics
       const completedTasks = progressionTasks.filter(t => t.status === 'completed');
       const inProgressTasks = progressionTasks.filter(t => t.status === 'in_progress');
       const pendingTasks = progressionTasks.filter(t => t.status === 'not_started');
-      const overdueTasks = progressionTasks.filter(t => 
+      const overdueTasks = progressionTasks.filter(t =>
         t.dueDate && new Date(t.dueDate) < now && t.status !== 'completed'
       );
-      
+
       // Get mandatory courses compliance
       const mandatoryCourses = allCourses.filter(c => c.isMandatory);
-      const mandatoryCompleted = mandatoryCourses.filter(mc => 
-        enrollments.some(e => e.courseId === mc.id && 
+      const mandatoryCompleted = mandatoryCourses.filter(mc =>
+        enrollments.some(e => e.courseId === mc.id &&
           (e.status === 'completed' || (e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)))
         )
       );
-      
+
       // Determine target grade (from progression tasks or next logical grade)
-      const targetGrades = [...new Set(progressionTasks.map(t => t.targetGrade))];
+      const targetGrades = Array.from(new Set(progressionTasks.map(t => t.targetGrade)));
       const primaryTargetGrade = targetGrades[0] || getNextGrade(user.currentGrade || 'G1');
-      
+
       // Build AI prompt
       const openai = new OpenAI();
-      
+
       const prompt = `You are an AI career development analyst for an enterprise training platform. Analyze the following employee data and provide a comprehensive grade readiness prediction.
 
 EMPLOYEE PROFILE:
@@ -1044,9 +1144,9 @@ ${progressionTasks.map(t => `- ${t.title}: ${t.status} (Target: ${t.targetGrade}
 
 COURSE COMPLETION DETAILS:
 ${completedEnrollments.slice(0, 10).map(e => {
-  const course = allCourses.find(c => c.id === e.courseId);
-  return `- ${course?.title || 'Unknown Course'} (${course?.category || 'N/A'})`;
-}).join('\n') || 'No completed courses'}
+        const course = allCourses.find(c => c.id === e.courseId);
+        return `- ${course?.title || 'Unknown Course'} (${course?.category || 'N/A'})`;
+      }).join('\n') || 'No completed courses'}
 
 Based on this data, provide a detailed grade readiness assessment. Consider:
 1. Training completion rate and compliance
@@ -1080,7 +1180,7 @@ Respond in JSON format:
       }
 
       const prediction = JSON.parse(content);
-      
+
       // Add metadata to response
       const result = {
         ...prediction,
@@ -1095,17 +1195,17 @@ Respond in JSON format:
           completedCourses: completedEnrollments.length,
           activeCourses: activeEnrollments.length,
           expiredCourses: expiredEnrollments.length,
-          mandatoryCompliance: mandatoryCourses.length > 0 
-            ? Math.round((mandatoryCompleted.length / mandatoryCourses.length) * 100) 
+          mandatoryCompliance: mandatoryCourses.length > 0
+            ? Math.round((mandatoryCompleted.length / mandatoryCourses.length) * 100)
             : 100,
           totalTasks: progressionTasks.length,
           completedTasks: completedTasks.length,
-          taskCompletionRate: progressionTasks.length > 0 
-            ? Math.round((completedTasks.length / progressionTasks.length) * 100) 
+          taskCompletionRate: progressionTasks.length > 0
+            ? Math.round((completedTasks.length / progressionTasks.length) * 100)
             : 0,
         }
       };
-      
+
       // Log the prediction for audit
       await storage.createAuditLog({
         userId: user.id,
@@ -1115,57 +1215,57 @@ Respond in JSON format:
         newValues: { readinessScore: prediction.readinessScore, targetGrade: primaryTargetGrade },
         tenantId,
       });
-      
+
       res.json(result);
     } catch (error) {
       console.error("Grade readiness prediction error:", error);
       res.status(500).json({ error: "Failed to generate grade readiness prediction" });
     }
   });
-  
+
   // Get grade readiness for a specific employee (managers/admins only)
   app.get("/api/ai/grade-readiness/:userId", isAuthenticated, requireRole('administrator', 'training_officer', 'manager', 'foreman'), async (req: Request, res: Response) => {
     try {
       const targetUserId = req.params.userId;
       const tenantId = req.user!.tenantId || 'default';
-      
+
       const targetUser = await storage.getUser(targetUserId);
       if (!targetUser || targetUser.tenantId !== tenantId) {
         return res.status(404).json({ error: "Employee not found" });
       }
-      
+
       // Gather comprehensive employee data
       const enrollments = await storage.getEnrollmentsByUser(targetUserId);
       const progressionTasks = await storage.getProgressionTasksByUser(targetUserId);
       const allCourses = await storage.getActiveCourses(tenantId);
       const department = targetUser.departmentId ? await storage.getDepartment(targetUser.departmentId) : null;
-      
+
       // Calculate metrics (same as self-assessment)
       const now = new Date();
-      const completedEnrollments = enrollments.filter(e => e.status === 'completed' || 
+      const completedEnrollments = enrollments.filter(e => e.status === 'completed' ||
         (e.status === 'active' && e.completedAt));
       const activeEnrollments = enrollments.filter(e => e.status === 'active' && !e.completedAt);
       const expiredEnrollments = enrollments.filter(e => e.expiresAt && new Date(e.expiresAt) < now);
-      
+
       const completedTasks = progressionTasks.filter(t => t.status === 'completed');
       const inProgressTasks = progressionTasks.filter(t => t.status === 'in_progress');
       const pendingTasks = progressionTasks.filter(t => t.status === 'not_started');
-      const overdueTasks = progressionTasks.filter(t => 
+      const overdueTasks = progressionTasks.filter(t =>
         t.dueDate && new Date(t.dueDate) < now && t.status !== 'completed'
       );
-      
+
       const mandatoryCourses = allCourses.filter(c => c.isMandatory);
-      const mandatoryCompleted = mandatoryCourses.filter(mc => 
-        enrollments.some(e => e.courseId === mc.id && 
+      const mandatoryCompleted = mandatoryCourses.filter(mc =>
+        enrollments.some(e => e.courseId === mc.id &&
           (e.status === 'completed' || (e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)))
         )
       );
-      
-      const targetGrades = [...new Set(progressionTasks.map(t => t.targetGrade))];
+
+      const targetGrades = Array.from(new Set(progressionTasks.map(t => t.targetGrade)));
       const primaryTargetGrade = targetGrades[0] || getNextGrade(targetUser.currentGrade || 'G1');
-      
+
       const openai = new OpenAI();
-      
+
       const prompt = `You are an AI career development analyst for an enterprise training platform. Analyze the following employee data and provide a comprehensive grade readiness prediction.
 
 EMPLOYEE PROFILE:
@@ -1222,7 +1322,7 @@ Respond in JSON format:
       }
 
       const prediction = JSON.parse(content);
-      
+
       const result = {
         ...prediction,
         employeeId: targetUser.id,
@@ -1236,17 +1336,17 @@ Respond in JSON format:
           completedCourses: completedEnrollments.length,
           activeCourses: activeEnrollments.length,
           expiredCourses: expiredEnrollments.length,
-          mandatoryCompliance: mandatoryCourses.length > 0 
-            ? Math.round((mandatoryCompleted.length / mandatoryCourses.length) * 100) 
+          mandatoryCompliance: mandatoryCourses.length > 0
+            ? Math.round((mandatoryCompleted.length / mandatoryCourses.length) * 100)
             : 100,
           totalTasks: progressionTasks.length,
           completedTasks: completedTasks.length,
-          taskCompletionRate: progressionTasks.length > 0 
-            ? Math.round((completedTasks.length / progressionTasks.length) * 100) 
+          taskCompletionRate: progressionTasks.length > 0
+            ? Math.round((completedTasks.length / progressionTasks.length) * 100)
             : 0,
         }
       };
-      
+
       res.json(result);
     } catch (error) {
       console.error("Grade readiness prediction error:", error);
@@ -1264,76 +1364,76 @@ Respond in JSON format:
       const enrollments = await storage.getAllEnrollments(req.user!.tenantId || 'default');
       const renewals = await storage.getAllRenewalRequests(req.user!.tenantId || 'default');
       const departments = await storage.getAllDepartments(req.user!.tenantId || 'default');
-      
+
       const now = new Date();
       const thirtyDaysFromNow = new Date(now);
       thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-      
-      const activeEnrollments = enrollments.filter(e => 
+
+      const activeEnrollments = enrollments.filter(e =>
         e.status === 'active' && e.expiresAt && new Date(e.expiresAt) > now
       );
-      const expiringEnrollments = enrollments.filter(e => 
-        e.status === 'active' && e.expiresAt && 
+      const expiringEnrollments = enrollments.filter(e =>
+        e.status === 'active' && e.expiresAt &&
         new Date(e.expiresAt) > now && new Date(e.expiresAt) <= thirtyDaysFromNow
       );
-      const expiredEnrollments = enrollments.filter(e => 
+      const expiredEnrollments = enrollments.filter(e =>
         e.expiresAt && new Date(e.expiresAt) <= now
       );
-      
+
       // Calculate compliance rate (employees with all mandatory courses active)
       const mandatoryCourses = courses.filter(c => c.isMandatory && c.isActive);
       const employees = users.filter(u => u.role === 'employee');
       let compliantCount = 0;
-      
+
       for (const emp of employees) {
         const empEnrollments = activeEnrollments.filter(e => e.userId === emp.id);
-        const hasAllMandatory = mandatoryCourses.every(mc => 
+        const hasAllMandatory = mandatoryCourses.every(mc =>
           empEnrollments.some(e => e.courseId === mc.id)
         );
         if (hasAllMandatory || mandatoryCourses.length === 0) compliantCount++;
       }
-      
-      const complianceRate = employees.length > 0 
-        ? Math.round((compliantCount / employees.length) * 100) 
+
+      const complianceRate = employees.length > 0
+        ? Math.round((compliantCount / employees.length) * 100)
         : 100;
-      
+
       // Calculate pending renewals
-      const pendingRenewals = renewals.filter(r => 
+      const pendingRenewals = renewals.filter(r =>
         r.status === 'pending' || r.status === 'foreman_approved'
       ).length;
-      
+
       // Approved this month
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const approvedThisMonth = renewals.filter(r => 
-        (r.status === 'manager_approved' || r.status === 'completed') && 
+      const approvedThisMonth = renewals.filter(r =>
+        (r.status === 'manager_approved' || r.status === 'completed') &&
         r.managerApprovedAt && new Date(r.managerApprovedAt) >= startOfMonth
       ).length;
-      
+
       // Department stats
       const departmentStats = await Promise.all(departments.map(async (dept) => {
         const deptUsers = users.filter(u => u.departmentId === dept.id);
-        const deptEnrollments = activeEnrollments.filter(e => 
+        const deptEnrollments = activeEnrollments.filter(e =>
           deptUsers.some(u => u.id === e.userId)
         );
-        
+
         let deptCompliant = 0;
         for (const u of deptUsers) {
           const uEnrollments = activeEnrollments.filter(e => e.userId === u.id);
-          const hasAllMandatory = mandatoryCourses.every(mc => 
+          const hasAllMandatory = mandatoryCourses.every(mc =>
             uEnrollments.some(e => e.courseId === mc.id)
           );
           if (hasAllMandatory || mandatoryCourses.length === 0) deptCompliant++;
         }
-        
+
         return {
           name: dept.name,
           employees: deptUsers.length,
-          compliance: deptUsers.length > 0 
-            ? Math.round((deptCompliant / deptUsers.length) * 100) 
+          compliance: deptUsers.length > 0
+            ? Math.round((deptCompliant / deptUsers.length) * 100)
             : 100,
         };
       }));
-      
+
       res.json({
         totalEmployees: employees.length,
         totalCourses: courses.filter(c => c.isActive).length,
@@ -1356,14 +1456,14 @@ Respond in JSON format:
     try {
       const days = parseInt(req.query.days as string) || 30;
       const expiring = await storage.getExpiringEnrollments(days, req.user!.tenantId || 'default');
-      
+
       // Enrich with user and course data
       const enriched = await Promise.all(expiring.map(async (e) => {
         const user = await storage.getUser(e.userId);
         const course = await storage.getCourse(e.courseId);
         return { ...e, user, course };
       }));
-      
+
       res.json(enriched);
     } catch (error) {
       console.error("Get expiring courses report error:", error);
@@ -1377,29 +1477,29 @@ Respond in JSON format:
       const allEnrollments = await storage.getAllEnrollments(req.user!.tenantId || 'default');
       const mandatoryCourses = (await storage.getAllCourses(req.user!.tenantId || 'default'))
         .filter(c => c.isMandatory && c.isActive);
-      
+
       const now = new Date();
-      
+
       const compliance = users.map(user => {
         const userEnrollments = allEnrollments.filter(e => e.userId === user.id);
-        const activeEnrollments = userEnrollments.filter(e => 
+        const activeEnrollments = userEnrollments.filter(e =>
           e.status === 'active' && e.expiresAt && e.expiresAt > now
         );
-        const completedMandatory = mandatoryCourses.filter(mc => 
+        const completedMandatory = mandatoryCourses.filter(mc =>
           activeEnrollments.some(e => e.courseId === mc.id)
         );
-        
+
         return {
           user,
           totalMandatory: mandatoryCourses.length,
           completedMandatory: completedMandatory.length,
-          complianceRate: mandatoryCourses.length > 0 
-            ? Math.round((completedMandatory.length / mandatoryCourses.length) * 100) 
+          complianceRate: mandatoryCourses.length > 0
+            ? Math.round((completedMandatory.length / mandatoryCourses.length) * 100)
             : 100,
           activeEnrollments: activeEnrollments.length,
         };
       });
-      
+
       res.json(compliance);
     } catch (error) {
       console.error("Get compliance report error:", error);
@@ -1415,78 +1515,78 @@ Respond in JSON format:
       const allCourses = await storage.getAllCourses(tenantId);
       const renewals = await storage.getAllRenewalRequests(tenantId);
       const departments = await storage.getAllDepartments(tenantId);
-      
+
       const now = new Date();
       const thirtyDaysFromNow = new Date();
       thirtyDaysFromNow.setDate(now.getDate() + 30);
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      
+
       const employees = users.filter(u => u.role === 'employee' || u.role === 'foreman');
-      
-      const activeEnrollments = enrollments.filter(e => 
+
+      const activeEnrollments = enrollments.filter(e =>
         e.status === 'active' || e.status === 'completed'
       ).length;
-      
+
       const expiringEnrollments = enrollments.filter(e => {
         if (!e.expiresAt) return false;
         const expDate = new Date(e.expiresAt);
         return expDate > now && expDate <= thirtyDaysFromNow;
       }).length;
-      
+
       const expiredEnrollments = enrollments.filter(e => {
         if (!e.expiresAt) return false;
         return new Date(e.expiresAt) < now;
       }).length;
-      
-      const employeesWithTraining = employees.filter(u => 
+
+      const employeesWithTraining = employees.filter(u =>
         enrollments.some(e => e.userId === u.id)
       );
-      
+
       // Compliant = has training and no expired courses
       const compliantEmployeesCount = employeesWithTraining.filter(u => {
         const userEnrollments = enrollments.filter(e => e.userId === u.id);
         return !userEnrollments.some(e => e.expiresAt && new Date(e.expiresAt) < now);
       }).length;
-      
+
       // Training Compliance Rate: Compliant trained / All trained (excludes untrained employees)
-      const trainingComplianceRate = employeesWithTraining.length > 0 
+      const trainingComplianceRate = employeesWithTraining.length > 0
         ? Math.round((compliantEmployeesCount / employeesWithTraining.length) * 100)
         : 0;
-      
+
       // Overall Compliance Rate: Compliant trained / ALL employees (untrained count as non-compliant)
-      const overallComplianceRate = employees.length > 0 
+      const overallComplianceRate = employees.length > 0
         ? Math.round((compliantEmployeesCount / employees.length) * 100)
         : 0;
-      
-      const pendingRenewals = renewals.filter(r => 
+
+      const pendingRenewals = renewals.filter(r =>
         r.status === 'pending' || r.status === 'foreman_approved'
       ).length;
-      
+
       const approvedThisMonth = renewals.filter(r => {
         if (r.status !== 'manager_approved' && r.status !== 'completed') return false;
         if (!r.managerApprovedAt) return false;
         return new Date(r.managerApprovedAt) >= startOfMonth;
       }).length;
-      
+
       const departmentStats = departments.map(dept => {
         const deptUsers = employees.filter(u => u.departmentId === dept.id);
-        const deptEnrollments = enrollments.filter(e => 
+        const deptEnrollments = enrollments.filter(e =>
           deptUsers.some(u => u.id === e.userId)
         );
-        const deptExpired = deptEnrollments.filter(e => 
+        const deptExpired = deptEnrollments.filter(e =>
           e.expiresAt && new Date(e.expiresAt) < now
         ).length;
         const deptCompliance = deptEnrollments.length > 0
           ? Math.round(((deptEnrollments.length - deptExpired) / deptEnrollments.length) * 100)
           : 100;
-        
+
         return {
           name: dept.name,
           employees: deptUsers.length,
           compliance: deptCompliance,
         };
       });
-      
+
       res.json({
         totalEmployees: employees.length,
         employeesWithTraining: employeesWithTraining.length,
@@ -1513,7 +1613,7 @@ Respond in JSON format:
   app.get("/api/reports/renewal-stats", isAuthenticated, requireRole('administrator', 'training_officer'), async (req: Request, res: Response) => {
     try {
       const renewals = await storage.getAllRenewalRequests(req.user!.tenantId || 'default');
-      
+
       const stats = {
         total: renewals.length,
         pending: renewals.filter(r => r.status === 'pending').length,
@@ -1522,7 +1622,7 @@ Respond in JSON format:
         rejected: renewals.filter(r => r.status === 'rejected').length,
         completed: renewals.filter(r => r.status === 'completed').length,
       };
-      
+
       res.json(stats);
     } catch (error) {
       console.error("Get renewal stats error:", error);
@@ -1533,16 +1633,16 @@ Respond in JSON format:
   // =====================
   // REPORT EXPORT ROUTES
   // =====================
-  
+
   // Training Compliance Report
   app.get("/api/reports/export/training-compliance/:format", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
     try {
       const { format } = req.params;
       const tenantId = req.user!.tenantId || 'default';
       const data = await generateTrainingComplianceData(tenantId);
-      
+
       await auditLog(req.user!.id, 'create', 'report_export', 'training_compliance', null, { format }, req);
-      
+
       if (format === 'pdf') {
         const buffer = await generateTrainingCompliancePDF(data);
         res.setHeader('Content-Type', 'application/pdf');
@@ -1566,27 +1666,27 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to generate training compliance report" });
     }
   });
-  
+
   // Employee Progress Report
   app.get("/api/reports/export/employee-progress/:userId/:format", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { userId, format } = req.params;
       const tenantId = req.user!.tenantId || 'default';
-      
-      const canView = req.user!.id === userId || 
+
+      const canView = req.user!.id === userId ||
         ['administrator', 'training_officer', 'manager'].includes(req.user!.role);
-      
+
       if (!canView) {
         return res.status(403).json({ error: "Insufficient permissions" });
       }
-      
+
       const data = await generateEmployeeProgressData(userId, tenantId);
       if (!data) {
         return res.status(404).json({ error: "Employee not found or not in your tenant" });
       }
-      
+
       await auditLog(req.user!.id, 'create', 'report_export', 'employee_progress', null, { userId, format }, req);
-      
+
       if (format === 'pdf') {
         const buffer = await generateEmployeeProgressPDF(data);
         res.setHeader('Content-Type', 'application/pdf');
@@ -1610,27 +1710,27 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to generate employee progress report" });
     }
   });
-  
+
   // Department Statistics Report
   app.get("/api/reports/export/department/:departmentId/:format", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
     try {
       const { departmentId, format } = req.params;
       const tenantId = req.user!.tenantId || 'default';
       const deptId = parseInt(departmentId, 10);
-      
+
       // Verify department belongs to tenant before generating any data
       const departmentCheck = await verifyDepartmentTenant(deptId, tenantId);
       if (!departmentCheck) {
         return res.status(404).json({ error: "Department not found" });
       }
-      
+
       const data = await generateDepartmentStatsData(deptId, tenantId);
       if (!data) {
         return res.status(404).json({ error: "Department not found or not in your tenant" });
       }
-      
+
       await auditLog(req.user!.id, 'create', 'report_export', 'department_stats', null, { departmentId, format }, req);
-      
+
       if (format === 'pdf') {
         const buffer = await generateDepartmentStatsPDF(data);
         res.setHeader('Content-Type', 'application/pdf');
@@ -1658,24 +1758,24 @@ Respond in JSON format:
   // =====================
   // ADVANCED KPI ENGINE
   // =====================
-  
+
   // Trend Analysis - Historical compliance data
   app.get("/api/kpi/trends", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
     try {
       const tenantId = req.user!.tenantId || 'default';
       const { period = '6months' } = req.query;
-      
+
       const enrollments = await storage.getAllEnrollments(tenantId);
       const users = await storage.getAllUsers(tenantId);
       const auditLogs = await storage.getAuditLogs(tenantId, 1000);
-      
+
       const employees = users.filter(u => u.role === 'employee');
       const now = new Date();
-      
+
       // Generate monthly trend data
       const months: { month: string; date: Date }[] = [];
       const monthCount = period === '12months' ? 12 : period === '3months' ? 3 : 6;
-      
+
       for (let i = monthCount - 1; i >= 0; i--) {
         const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
         months.push({
@@ -1683,34 +1783,34 @@ Respond in JSON format:
           date,
         });
       }
-      
+
       const trends = months.map(({ month, date }) => {
         const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-        
+
         // Count enrollments active at end of that month
         const activeAtMonth = enrollments.filter(e => {
-          const createdAt = e.createdAt ? new Date(e.createdAt) : new Date();
+          const createdAt = e.enrolledAt ? new Date(e.enrolledAt) : new Date();
           const expiresAt = e.expiresAt ? new Date(e.expiresAt) : null;
           return createdAt <= endOfMonth && (!expiresAt || expiresAt > endOfMonth);
         });
-        
+
         // Count expired enrollments at end of month
         const expiredAtMonth = enrollments.filter(e => {
           const expiresAt = e.expiresAt ? new Date(e.expiresAt) : null;
           return expiresAt && expiresAt <= endOfMonth && expiresAt > date;
         });
-        
+
         // Calculate compliance for that month
         const employeesWithActiveTraining = new Set(activeAtMonth.map(e => e.userId));
         const complianceRate = employees.length > 0
           ? Math.round((employeesWithActiveTraining.size / employees.length) * 100)
           : 100;
-        
+
         return {
           month,
           activeEnrollments: activeAtMonth.length,
           newEnrollments: enrollments.filter(e => {
-            const createdAt = e.createdAt ? new Date(e.createdAt) : null;
+            const createdAt = e.enrolledAt ? new Date(e.enrolledAt) : null;
             return createdAt && createdAt >= date && createdAt <= endOfMonth;
           }).length,
           expiredEnrollments: expiredAtMonth.length,
@@ -1718,19 +1818,19 @@ Respond in JSON format:
           trainedEmployees: employeesWithActiveTraining.size,
         };
       });
-      
+
       // Calculate growth rates
       const firstMonth = trends[0];
       const lastMonth = trends[trends.length - 1];
-      
+
       const complianceGrowth = firstMonth.complianceRate > 0
         ? Math.round(((lastMonth.complianceRate - firstMonth.complianceRate) / firstMonth.complianceRate) * 100)
         : 0;
-      
+
       const enrollmentGrowth = firstMonth.activeEnrollments > 0
         ? Math.round(((lastMonth.activeEnrollments - firstMonth.activeEnrollments) / firstMonth.activeEnrollments) * 100)
         : 0;
-      
+
       res.json({
         trends,
         summary: {
@@ -1748,33 +1848,33 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to generate KPI trends" });
     }
   });
-  
+
   // Department Comparison with Drill-down
   app.get("/api/kpi/department-comparison", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
     try {
       const tenantId = req.user!.tenantId || 'default';
-      
+
       const departments = await storage.getAllDepartments(tenantId);
       const users = await storage.getAllUsers(tenantId);
       const enrollments = await storage.getAllEnrollments(tenantId);
       const courses = await storage.getAllCourses(tenantId);
       const progressionTasks = await storage.getAllProgressionTasks(tenantId);
-      
+
       const now = new Date();
       const mandatoryCourses = courses.filter(c => c.isMandatory && c.isActive);
-      
+
       const departmentMetrics = await Promise.all(departments.map(async (dept) => {
         const deptUsers = users.filter(u => u.departmentId === dept.id);
         const deptEmployees = deptUsers.filter(u => u.role === 'employee');
-        const deptEnrollments = enrollments.filter(e => 
+        const deptEnrollments = enrollments.filter(e =>
           deptUsers.some(u => u.id === e.userId)
         );
-        
+
         // Compliance calculations
-        const activeEnrollments = deptEnrollments.filter(e => 
+        const activeEnrollments = deptEnrollments.filter(e =>
           e.status === 'active' && e.expiresAt && new Date(e.expiresAt) > now
         );
-        const expiredEnrollments = deptEnrollments.filter(e => 
+        const expiredEnrollments = deptEnrollments.filter(e =>
           e.expiresAt && new Date(e.expiresAt) <= now
         );
         const expiringIn30Days = deptEnrollments.filter(e => {
@@ -1784,36 +1884,36 @@ Respond in JSON format:
           thirtyDays.setDate(thirtyDays.getDate() + 30);
           return expires > now && expires <= thirtyDays;
         });
-        
+
         // Mandatory compliance
         let mandatoryCompliant = 0;
         for (const emp of deptEmployees) {
           const empEnrollments = deptEnrollments.filter(e => e.userId === emp.id);
-          const hasAllMandatory = mandatoryCourses.every(mc => 
-            empEnrollments.some(e => 
-              e.courseId === mc.id && 
+          const hasAllMandatory = mandatoryCourses.every(mc =>
+            empEnrollments.some(e =>
+              e.courseId === mc.id &&
               (e.status === 'completed' || (e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)))
             )
           );
           if (hasAllMandatory || mandatoryCourses.length === 0) mandatoryCompliant++;
         }
-        
+
         // Training completion rate
-        const completedEnrollments = deptEnrollments.filter(e => 
+        const completedEnrollments = deptEnrollments.filter(e =>
           e.status === 'completed' || (e.status === 'active' && e.completedAt)
         );
-        
+
         // Progression tasks
-        const deptTasks = progressionTasks.filter(t => 
+        const deptTasks = progressionTasks.filter(t =>
           deptUsers.some(u => u.id === t.userId)
         );
         const completedTasks = deptTasks.filter(t => t.status === 'completed');
-        
+
         // Average courses per employee
         const avgCoursesPerEmployee = deptEmployees.length > 0
           ? Math.round((deptEnrollments.length / deptEmployees.length) * 10) / 10
           : 0;
-        
+
         return {
           departmentId: dept.id,
           departmentName: dept.name,
@@ -1850,10 +1950,10 @@ Respond in JSON format:
           avgCoursesPerEmployee,
         };
       }));
-      
+
       // Sort by compliance rate
       departmentMetrics.sort((a, b) => b.metrics.complianceRate - a.metrics.complianceRate);
-      
+
       // Calculate organization-wide averages
       const orgAverages = {
         complianceRate: Math.round(departmentMetrics.reduce((sum, d) => sum + d.metrics.complianceRate, 0) / (departmentMetrics.length || 1)),
@@ -1861,7 +1961,7 @@ Respond in JSON format:
         completionRate: Math.round(departmentMetrics.reduce((sum, d) => sum + d.metrics.completionRate, 0) / (departmentMetrics.length || 1)),
         taskCompletionRate: Math.round(departmentMetrics.reduce((sum, d) => sum + d.metrics.taskCompletionRate, 0) / (departmentMetrics.length || 1)),
       };
-      
+
       res.json({
         departments: departmentMetrics,
         organizationAverages: orgAverages,
@@ -1874,43 +1974,43 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to generate department comparison" });
     }
   });
-  
+
   // Department Drill-down
   app.get("/api/kpi/department/:departmentId/details", isAuthenticated, requireRole('administrator', 'training_officer', 'manager'), async (req: Request, res: Response) => {
     try {
       const { departmentId } = req.params;
       const tenantId = req.user!.tenantId || 'default';
       const deptId = parseInt(departmentId);
-      
+
       const department = await storage.getDepartment(deptId);
       if (!department || department.tenantId !== tenantId) {
         return res.status(404).json({ error: "Department not found" });
       }
-      
+
       const users = await storage.getAllUsers(tenantId);
       const enrollments = await storage.getAllEnrollments(tenantId);
       const courses = await storage.getAllCourses(tenantId);
       const progressionTasks = await storage.getAllProgressionTasks(tenantId);
-      
+
       const deptUsers = users.filter(u => u.departmentId === deptId);
       const deptEmployees = deptUsers.filter(u => u.role === 'employee');
       const now = new Date();
-      
+
       // Employee-level details
       const employeeDetails = deptEmployees.map(emp => {
         const empEnrollments = enrollments.filter(e => e.userId === emp.id);
         const empTasks = progressionTasks.filter(t => t.userId === emp.id);
-        
-        const activeEnrollments = empEnrollments.filter(e => 
+
+        const activeEnrollments = empEnrollments.filter(e =>
           e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)
         );
-        const expiredEnrollments = empEnrollments.filter(e => 
+        const expiredEnrollments = empEnrollments.filter(e =>
           e.expiresAt && new Date(e.expiresAt) <= now
         );
-        const completedEnrollments = empEnrollments.filter(e => 
+        const completedEnrollments = empEnrollments.filter(e =>
           e.status === 'completed' || e.completedAt
         );
-        
+
         return {
           id: emp.id,
           name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Unknown',
@@ -1928,17 +2028,17 @@ Respond in JSON format:
             completed: empTasks.filter(t => t.status === 'completed').length,
             inProgress: empTasks.filter(t => t.status === 'in_progress').length,
           },
-          complianceStatus: expiredEnrollments.length > 0 ? 'Non-Compliant' : 
+          complianceStatus: expiredEnrollments.length > 0 ? 'Non-Compliant' :
             (activeEnrollments.length > 0 ? 'Compliant' : 'No Training'),
         };
       });
-      
+
       // Course breakdown
       const courseBreakdown = courses.filter(c => c.isActive).map(course => {
-        const courseEnrollments = enrollments.filter(e => 
+        const courseEnrollments = enrollments.filter(e =>
           e.courseId === course.id && deptUsers.some(u => u.id === e.userId)
         );
-        
+
         return {
           courseId: course.id,
           title: course.title,
@@ -1948,12 +2048,12 @@ Respond in JSON format:
           completedCount: courseEnrollments.filter(e => e.status === 'completed' || e.completedAt).length,
           activeCount: courseEnrollments.filter(e => e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)).length,
           expiredCount: courseEnrollments.filter(e => e.expiresAt && new Date(e.expiresAt) <= now).length,
-          penetrationRate: deptEmployees.length > 0 
+          penetrationRate: deptEmployees.length > 0
             ? Math.round((courseEnrollments.length / deptEmployees.length) * 100)
             : 0,
         };
       }).sort((a, b) => b.enrolledCount - a.enrolledCount);
-      
+
       res.json({
         department: {
           id: department.id,
@@ -1975,31 +2075,31 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to generate department details" });
     }
   });
-  
+
   // Custom KPI Dashboard Configuration
   app.get("/api/kpi/summary", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const tenantId = req.user!.tenantId || 'default';
       const userId = req.user!.id;
       const userRole = req.user!.role;
-      
+
       const users = await storage.getAllUsers(tenantId);
       const enrollments = await storage.getAllEnrollments(tenantId);
       const courses = await storage.getAllCourses(tenantId);
       const renewals = await storage.getAllRenewalRequests(tenantId);
       const progressionTasks = await storage.getAllProgressionTasks(tenantId);
-      
+
       const now = new Date();
       const employees = users.filter(u => u.role === 'employee');
       const mandatoryCourses = courses.filter(c => c.isMandatory && c.isActive);
-      
+
       // User-specific KPIs based on role
       let personalKPIs: Record<string, unknown> = {};
-      
+
       if (['employee', 'foreman', 'manager'].includes(userRole)) {
         const myEnrollments = enrollments.filter(e => e.userId === userId);
         const myTasks = progressionTasks.filter(t => t.userId === userId);
-        
+
         personalKPIs = {
           myCourses: myEnrollments.length,
           myActiveCourses: myEnrollments.filter(e => e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)).length,
@@ -2014,23 +2114,23 @@ Respond in JSON format:
           }).length,
           myTasks: myTasks.length,
           myCompletedTasks: myTasks.filter(t => t.status === 'completed').length,
-          myTaskProgress: myTasks.length > 0 
-            ? Math.round((myTasks.filter(t => t.status === 'completed').length / myTasks.length) * 100) 
+          myTaskProgress: myTasks.length > 0
+            ? Math.round((myTasks.filter(t => t.status === 'completed').length / myTasks.length) * 100)
             : 0,
         };
       }
-      
+
       // Organization-wide KPIs (for managers/admins)
       let orgKPIs: Record<string, unknown> = {};
-      
+
       if (['manager', 'training_officer', 'administrator'].includes(userRole)) {
-        const activeEnrollments = enrollments.filter(e => 
+        const activeEnrollments = enrollments.filter(e =>
           e.status === 'active' && (!e.expiresAt || new Date(e.expiresAt) > now)
         );
-        const expiredEnrollments = enrollments.filter(e => 
+        const expiredEnrollments = enrollments.filter(e =>
           e.expiresAt && new Date(e.expiresAt) <= now
         );
-        
+
         // Calculate compliance
         let compliantCount = 0;
         for (const emp of employees) {
@@ -2038,14 +2138,14 @@ Respond in JSON format:
           const hasExpired = empEnrollments.some(e => e.expiresAt && new Date(e.expiresAt) <= now);
           if (!hasExpired && empEnrollments.length > 0) compliantCount++;
         }
-        
+
         orgKPIs = {
           totalEmployees: employees.length,
           totalEnrollments: enrollments.length,
           activeEnrollments: activeEnrollments.length,
           expiredEnrollments: expiredEnrollments.length,
           complianceRate: employees.length > 0 ? Math.round((compliantCount / employees.length) * 100) : 100,
-          trainingCoverage: employees.length > 0 
+          trainingCoverage: employees.length > 0
             ? Math.round((new Set(enrollments.map(e => e.userId)).size / employees.length) * 100)
             : 0,
           pendingRenewals: renewals.filter(r => r.status === 'pending' || r.status === 'foreman_approved').length,
@@ -2054,7 +2154,7 @@ Respond in JSON format:
           mandatoryCourses: mandatoryCourses.length,
         };
       }
-      
+
       res.json({
         personalKPIs,
         organizationKPIs: orgKPIs,
@@ -2070,14 +2170,14 @@ Respond in JSON format:
   // =====================
   // SAP/ORACLE INTEGRATION API
   // =====================
-  
+
   // Export employees in SAP format
   app.get("/api/integration/sap/employees", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
     try {
       const tenantId = req.user!.tenantId || 'default';
       const users = await storage.getAllUsers(tenantId);
       const departments = await storage.getAllDepartments(tenantId);
-      
+
       // SAP HR format for employee master data
       const sapEmployees = users.map(user => {
         const dept = departments.find(d => d.id === user.departmentId);
@@ -2096,9 +2196,9 @@ Respond in JSON format:
           WERKS: tenantId,
         };
       });
-      
+
       await auditLog(req.user!.id, 'create', 'integration_export', 'sap_employees', null, { count: sapEmployees.length }, req);
-      
+
       res.json({
         format: 'SAP_HR_INFOTYPE_0001',
         version: '1.0',
@@ -2111,7 +2211,7 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to export employees in SAP format" });
     }
   });
-  
+
   // Export training records in SAP format
   app.get("/api/integration/sap/training", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
     try {
@@ -2119,12 +2219,12 @@ Respond in JSON format:
       const enrollments = await storage.getAllEnrollments(tenantId);
       const courses = await storage.getAllCourses(tenantId);
       const users = await storage.getAllUsers(tenantId);
-      
+
       // SAP Training & Event Management format
       const sapTraining = enrollments.map(enrollment => {
         const course = courses.find(c => c.id === enrollment.courseId);
         const user = users.find(u => u.id === enrollment.userId);
-        
+
         return {
           OBJID: enrollment.id.toString().padStart(8, '0'),
           PERNR: user?.employeeNumber || user?.id.substring(0, 8).toUpperCase() || '',
@@ -2132,7 +2232,7 @@ Respond in JSON format:
           EVTYP: 'ET01',
           EVTXT: course?.title || '',
           CATEG: course?.category || '',
-          BEGDA: enrollment.createdAt ? new Date(enrollment.createdAt).toISOString().split('T')[0].replace(/-/g, '') : '',
+          BEGDA: enrollment.enrolledAt ? new Date(enrollment.enrolledAt).toISOString().split('T')[0].replace(/-/g, '') : '',
           ENDDA: enrollment.expiresAt ? new Date(enrollment.expiresAt).toISOString().split('T')[0].replace(/-/g, '') : '99991231',
           STATS: enrollment.status === 'completed' ? '3' : enrollment.status === 'active' ? '2' : '1',
           STATU: enrollment.status.toUpperCase(),
@@ -2141,9 +2241,9 @@ Respond in JSON format:
           VALID: course?.validityPeriodDays?.toString() || '',
         };
       });
-      
+
       await auditLog(req.user!.id, 'create', 'integration_export', 'sap_training', null, { count: sapTraining.length }, req);
-      
+
       res.json({
         format: 'SAP_TEM_TRAINING_RECORDS',
         version: '1.0',
@@ -2156,7 +2256,7 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to export training in SAP format" });
     }
   });
-  
+
   // Export certifications in Oracle HCM format
   app.get("/api/integration/oracle/certifications", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
     try {
@@ -2164,9 +2264,9 @@ Respond in JSON format:
       const enrollments = await storage.getAllEnrollments(tenantId);
       const courses = await storage.getAllCourses(tenantId);
       const users = await storage.getAllUsers(tenantId);
-      
+
       const now = new Date();
-      
+
       // Oracle HCM Cloud Certifications format
       const oracleCerts = enrollments
         .filter(e => e.status === 'completed' || (e.status === 'active' && e.completedAt))
@@ -2174,7 +2274,7 @@ Respond in JSON format:
           const course = courses.find(c => c.id === enrollment.courseId);
           const user = users.find(u => u.id === enrollment.userId);
           const isExpired = enrollment.expiresAt && new Date(enrollment.expiresAt) <= now;
-          
+
           return {
             CertificationId: `CERT-${enrollment.id.toString().padStart(8, '0')}`,
             PersonId: user?.id || '',
@@ -2183,12 +2283,12 @@ Respond in JSON format:
             CertificationName: course?.title || '',
             CertificationType: course?.category || 'Training',
             IssuingAuthority: course?.provider || 'Internal',
-            IssueDate: enrollment.completedAt 
+            IssueDate: enrollment.completedAt
               ? new Date(enrollment.completedAt).toISOString().split('T')[0]
-              : enrollment.createdAt 
-                ? new Date(enrollment.createdAt).toISOString().split('T')[0]
+              : enrollment.enrolledAt
+                ? new Date(enrollment.enrolledAt).toISOString().split('T')[0]
                 : '',
-            ExpirationDate: enrollment.expiresAt 
+            ExpirationDate: enrollment.expiresAt
               ? new Date(enrollment.expiresAt).toISOString().split('T')[0]
               : '',
             CertificationStatus: isExpired ? 'EXPIRED' : 'VALID',
@@ -2196,9 +2296,9 @@ Respond in JSON format:
             MandatoryFlag: course?.isMandatory ? 'Y' : 'N',
           };
         });
-      
+
       await auditLog(req.user!.id, 'create', 'integration_export', 'oracle_certifications', null, { count: oracleCerts.length }, req);
-      
+
       res.json({
         format: 'ORACLE_HCM_CERTIFICATIONS',
         version: '22A',
@@ -2211,37 +2311,37 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to export certifications in Oracle format" });
     }
   });
-  
+
   // Import employees from SAP (bidirectional sync)
   app.post("/api/integration/sap/employees/import", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
     try {
       const tenantId = req.user!.tenantId || 'default';
       const { data } = req.body;
-      
+
       if (!Array.isArray(data)) {
         return res.status(400).json({ error: "Invalid data format. Expected array of employee records." });
       }
-      
+
       const results = {
         processed: 0,
         created: 0,
         updated: 0,
         errors: [] as { record: number; error: string }[],
       };
-      
+
       for (let i = 0; i < data.length; i++) {
         const record = data[i];
         try {
           // Find existing user by employee number or email
           const existingUsers = await storage.getAllUsers(tenantId);
-          const existing = existingUsers.find(u => 
+          const existing = existingUsers.find(u =>
             u.employeeNumber === record.PERNR || u.email === record.EMAIL
           );
-          
+
           // Find department by code
           const departments = await storage.getAllDepartments(tenantId);
           const dept = departments.find(d => d.code === record.ORGEH);
-          
+
           if (existing) {
             // Update existing user
             await storage.updateUser(existing.id, {
@@ -2274,9 +2374,9 @@ Respond in JSON format:
           results.errors.push({ record: i, error: String(err) });
         }
       }
-      
+
       await auditLog(req.user!.id, 'create', 'integration_import', 'sap_employees', null, results, req);
-      
+
       res.json({
         success: true,
         ...results,
@@ -2286,17 +2386,17 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to import employees from SAP format" });
     }
   });
-  
+
   // Import training completions from Oracle HCM (bidirectional sync)
   app.post("/api/integration/oracle/training/import", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
     try {
       const tenantId = req.user!.tenantId || 'default';
       const { data } = req.body;
-      
+
       if (!Array.isArray(data)) {
         return res.status(400).json({ error: "Invalid data format. Expected array of training records." });
       }
-      
+
       const results = {
         processed: 0,
         created: 0,
@@ -2304,39 +2404,39 @@ Respond in JSON format:
         skipped: 0,
         errors: [] as { record: number; error: string }[],
       };
-      
+
       const users = await storage.getAllUsers(tenantId);
       const courses = await storage.getAllCourses(tenantId);
-      
+
       for (let i = 0; i < data.length; i++) {
         const record = data[i];
         try {
           // Find user by person number or ID
-          const user = users.find(u => 
+          const user = users.find(u =>
             u.employeeNumber === record.PersonNumber || u.id === record.PersonId
           );
-          
+
           if (!user) {
             results.skipped++;
             results.errors.push({ record: i, error: `User not found: ${record.PersonNumber || record.PersonId}` });
             continue;
           }
-          
+
           // Find course by title
-          const course = courses.find(c => 
+          const course = courses.find(c =>
             c.title.toLowerCase() === record.CertificationName?.toLowerCase()
           );
-          
+
           if (!course) {
             results.skipped++;
             results.errors.push({ record: i, error: `Course not found: ${record.CertificationName}` });
             continue;
           }
-          
+
           // Check for existing enrollment
           const existingEnrollments = await storage.getEnrollmentsByUser(user.id);
           const existing = existingEnrollments.find(e => e.courseId === course.id);
-          
+
           if (existing) {
             // Update existing enrollment
             await storage.updateEnrollment(existing.id, {
@@ -2362,9 +2462,9 @@ Respond in JSON format:
           results.errors.push({ record: i, error: String(err) });
         }
       }
-      
+
       await auditLog(req.user!.id, 'create', 'integration_import', 'oracle_training', null, results, req);
-      
+
       res.json({
         success: true,
         ...results,
@@ -2374,18 +2474,18 @@ Respond in JSON format:
       res.status(500).json({ error: "Failed to import training from Oracle format" });
     }
   });
-  
+
   // Integration status and health check
   app.get("/api/integration/status", isAuthenticated, requireRole('administrator'), async (req: Request, res: Response) => {
     try {
       const tenantId = req.user!.tenantId || 'default';
-      
+
       // Get recent audit logs for integration activities
       const auditLogs = await storage.getAuditLogs(tenantId, 100);
-      const integrationLogs = auditLogs.filter(log => 
+      const integrationLogs = auditLogs.filter(log =>
         log.entityType.startsWith('integration_')
       );
-      
+
       const recentExports = integrationLogs
         .filter(log => log.entityType.includes('export'))
         .slice(0, 5)
@@ -2394,7 +2494,7 @@ Respond in JSON format:
           timestamp: log.createdAt,
           recordCount: (log.newValues as Record<string, unknown>)?.count || 0,
         }));
-      
+
       const recentImports = integrationLogs
         .filter(log => log.entityType.includes('import'))
         .slice(0, 5)
@@ -2403,7 +2503,7 @@ Respond in JSON format:
           timestamp: log.createdAt,
           results: log.newValues,
         }));
-      
+
       res.json({
         status: 'healthy',
         supportedFormats: {
@@ -2454,7 +2554,7 @@ Respond in JSON format:
       // Check if already seeded
       const existingDepts = await storage.getAllDepartments('default');
       if (existingDepts.length > 0) {
-        return res.json({ 
+        return res.json({
           success: true,
           message: 'Demo data already seeded (idempotent)',
           info: 'Database already contains departments'
@@ -2467,7 +2567,7 @@ Respond in JSON format:
         code: 'ERTMD',
         tenantId: 'default',
       });
-      
+
       const dept2 = await storage.createDepartment({
         name: 'Training & Management Services',
         code: 'TMSD',
@@ -2509,7 +2609,7 @@ Respond in JSON format:
       // Get existing users from DB (should have demo users already)
       const allUsers = await storage.getAllUsers('default');
       const employees = allUsers.filter(u => u.role === 'employee').slice(0, 10);
-      
+
       // Create enrollments (30+)
       let enrollmentCount = 0;
       for (const employee of employees) {
@@ -2607,7 +2707,7 @@ Respond in JSON format:
       if (depts.length > 0) {
         return res.json({ success: true, message: 'Already seeded' });
       }
-      
+
       const dept1 = await storage.createDepartment({ name: 'Engineering', code: 'ENG', tenantId: 'default' });
       const dept2 = await storage.createDepartment({ name: 'Operations', code: 'OPS', tenantId: 'default' });
 

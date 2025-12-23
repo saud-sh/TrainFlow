@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DataTable } from "@/components/data-table";
@@ -25,15 +25,17 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
-import { 
-  Users, 
-  Search, 
+import {
+  Users,
+  Search,
   Edit,
   Clock,
-  Shield
+  Shield,
+  Plus,
+  Trash2
 } from "lucide-react";
 import { format } from "date-fns";
-import type { User, UserRole } from "@shared/schema";
+import type { User, UserRole, InsertUser } from "@shared/schema";
 
 const roleOptions: { value: UserRole; label: string; color: string }[] = [
   { value: "employee", label: "Employee", color: "bg-chart-1/10 text-chart-1" },
@@ -57,6 +59,16 @@ export default function UserManagement() {
   const [search, setSearch] = useState("");
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedRole, setSelectedRole] = useState<UserRole | "">("");
+
+  // Create User State
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newUser, setNewUser] = useState<Partial<InsertUser>>({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    role: "employee",
+  });
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -84,6 +96,48 @@ export default function UserManagement() {
     },
   });
 
+  const createUserMutation = useMutation({
+    mutationFn: async (data: Partial<InsertUser>) => {
+      return apiRequest("POST", "/api/users", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setIsCreateOpen(false);
+      setNewUser({ firstName: "", lastName: "", email: "", password: "", role: "employee" });
+      toast({
+        title: "User Created",
+        description: "New user has been created successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create user.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/users/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({
+        title: "User Deleted",
+        description: "User has been deleted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete user.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const filteredUsers = users.filter((u) =>
     `${u.firstName} ${u.lastName}`.toLowerCase().includes(search.toLowerCase()) ||
     u.email?.toLowerCase().includes(search.toLowerCase())
@@ -101,6 +155,16 @@ export default function UserManagement() {
     setSelectedRole(user.role);
   };
 
+  const handleDelete = (id: string) => {
+    if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+      deleteUserMutation.mutate(id);
+    }
+  };
+
+  const handleCreateSave = () => {
+    createUserMutation.mutate(newUser);
+  };
+
   const handleSave = () => {
     if (editingUser && selectedRole) {
       updateRoleMutation.mutate({ id: editingUser.id, role: selectedRole });
@@ -110,14 +174,20 @@ export default function UserManagement() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Users className="h-6 w-6" />
-          User Management
-        </h1>
-        <p className="text-muted-foreground">
-          Manage user accounts and role assignments
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Users className="h-6 w-6" />
+            User Management
+          </h1>
+          <p className="text-muted-foreground">
+            Manage user accounts and role assignments
+          </p>
+        </div>
+        <Button onClick={() => setIsCreateOpen(true)} data-testid="btn-add-user">
+          <Plus className="mr-2 h-4 w-4" />
+          Add User
+        </Button>
       </div>
 
       {/* Stats */}
@@ -232,17 +302,31 @@ export default function UserManagement() {
               key: "actions",
               header: "",
               cell: (row) => (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(row);
-                  }}
-                  data-testid={`button-edit-${row.id}`}
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEdit(row);
+                    }}
+                    data-testid={`button-edit-${row.id}`}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(row.id);
+                    }}
+                    data-testid={`button-delete-${row.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               ),
               className: "text-right",
             },
@@ -251,6 +335,83 @@ export default function UserManagement() {
           emptyMessage="No users found"
         />
       )}
+
+      {/* Create User Dialog */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New User</DialogTitle>
+            <DialogDescription>
+              Create a new user account.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  value={newUser.firstName || ""}
+                  onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  value={newUser.lastName || ""}
+                  onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={newUser.email || ""}
+                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={newUser.password || ""}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select
+                value={newUser.role}
+                onValueChange={(v) => setNewUser({ ...newUser, role: v as UserRole })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roleOptions.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleCreateSave}
+              disabled={createUserMutation.isPending}
+            >
+              {createUserMutation.isPending ? "Creating..." : "Create User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Role Dialog */}
       <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>

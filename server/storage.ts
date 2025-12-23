@@ -20,13 +20,15 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<InsertUser>): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
-  
+  deleteUser(id: string): Promise<void>;
+
   // Departments
   getDepartment(id: number): Promise<Department | undefined>;
   getAllDepartments(tenantId?: string): Promise<Department[]>;
   createDepartment(department: InsertDepartment): Promise<Department>;
   updateDepartment(id: number, updates: Partial<InsertDepartment>): Promise<Department | undefined>;
-  
+  deleteDepartment(id: number): Promise<void>;
+
   // Courses
   getCourse(id: number): Promise<Course | undefined>;
   getAllCourses(tenantId?: string): Promise<Course[]>;
@@ -34,7 +36,7 @@ export interface IStorage {
   getCoursesByCategory(category: string, tenantId?: string): Promise<Course[]>;
   createCourse(course: InsertCourse): Promise<Course>;
   updateCourse(id: number, updates: Partial<InsertCourse>): Promise<Course | undefined>;
-  
+
   // Enrollments
   getEnrollment(id: number): Promise<Enrollment | undefined>;
   getEnrollmentsByUser(userId: string): Promise<Enrollment[]>;
@@ -43,7 +45,7 @@ export interface IStorage {
   getAllEnrollments(tenantId?: string): Promise<Enrollment[]>;
   createEnrollment(enrollment: InsertEnrollment): Promise<Enrollment>;
   updateEnrollment(id: number, updates: Partial<InsertEnrollment>): Promise<Enrollment | undefined>;
-  
+
   // Renewal Requests
   getRenewalRequest(id: number): Promise<RenewalRequest | undefined>;
   getRenewalRequestsByUser(userId: string): Promise<RenewalRequest[]>;
@@ -51,31 +53,31 @@ export interface IStorage {
   getAllRenewalRequests(tenantId?: string): Promise<RenewalRequest[]>;
   createRenewalRequest(request: InsertRenewalRequest): Promise<RenewalRequest>;
   updateRenewalRequest(id: number, updates: Partial<InsertRenewalRequest>): Promise<RenewalRequest | undefined>;
-  
+
   // Notifications
   getNotificationsByUser(userId: string, unreadOnly?: boolean): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationRead(id: number): Promise<void>;
   markAllNotificationsRead(userId: string): Promise<void>;
-  
+
   // Progression Tasks
   getProgressionTask(id: number): Promise<ProgressionTask | undefined>;
   getProgressionTasksByUser(userId: string): Promise<ProgressionTask[]>;
   getAllProgressionTasks(tenantId?: string): Promise<ProgressionTask[]>;
   createProgressionTask(task: InsertProgressionTask): Promise<ProgressionTask>;
   updateProgressionTask(id: number, updates: Partial<InsertProgressionTask>): Promise<ProgressionTask | undefined>;
-  
+
   // Audit Logs
   getAuditLogs(tenantId?: string, limit?: number): Promise<AuditLog[]>;
   getAuditLogsByUser(userId: string, limit?: number): Promise<AuditLog[]>;
   getAuditLogsByEntity(entityType: string, entityId: string): Promise<AuditLog[]>;
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
-  
+
   // AI Recommendations
   getRecommendationsByUser(userId: string, includeProcessed?: boolean): Promise<AiRecommendation[]>;
   createRecommendation(rec: InsertAiRecommendation): Promise<AiRecommendation>;
   updateRecommendation(id: number, updates: Partial<InsertAiRecommendation>): Promise<AiRecommendation | undefined>;
-  
+
   // Dashboard Stats
   getDashboardStats(userId: string, role: UserRole, tenantId?: string): Promise<DashboardStats>;
 }
@@ -94,27 +96,27 @@ export interface DashboardStats {
 export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
+    const [user] = await db.select().from(users).where(and(eq(users.id, id), eq(users.isActive, true)));
     return user;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    const [user] = await db.select().from(users).where(and(eq(users.email, email), eq(users.isActive, true)));
     return user;
   }
 
   async getAllUsers(tenantId: string = 'default'): Promise<User[]> {
-    return db.select().from(users).where(eq(users.tenantId, tenantId)).orderBy(asc(users.lastName));
+    return db.select().from(users).where(and(eq(users.tenantId, tenantId), eq(users.isActive, true))).orderBy(asc(users.lastName));
   }
 
   async getUsersByRole(role: UserRole, tenantId: string = 'default'): Promise<User[]> {
     return db.select().from(users)
-      .where(and(eq(users.role, role), eq(users.tenantId, tenantId)))
+      .where(and(eq(users.role, role), eq(users.tenantId, tenantId), eq(users.isActive, true)))
       .orderBy(asc(users.lastName));
   }
 
   async getUsersByDepartment(departmentId: number): Promise<User[]> {
-    return db.select().from(users).where(eq(users.departmentId, departmentId));
+    return db.select().from(users).where(and(eq(users.departmentId, departmentId), eq(users.isActive, true)));
   }
 
   async createUser(user: InsertUser): Promise<User> {
@@ -147,6 +149,10 @@ export class DatabaseStorage implements IStorage {
     return upserted;
   }
 
+  async deleteUser(id: string): Promise<void> {
+    await db.update(users).set({ isActive: false }).where(eq(users.id, id));
+  }
+
   // Departments
   async getDepartment(id: number): Promise<Department | undefined> {
     const [dept] = await db.select().from(departments).where(eq(departments.id, id));
@@ -168,6 +174,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(departments.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteDepartment(id: number): Promise<void> {
+    await db.delete(departments).where(eq(departments.id, id));
   }
 
   // Courses
@@ -225,7 +235,7 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(now.getDate() + daysAhead);
-    
+
     return db.select().from(enrollments)
       .where(and(
         eq(enrollments.tenantId, tenantId),
@@ -428,13 +438,13 @@ export class DatabaseStorage implements IStorage {
     const userEnrollments = await this.getEnrollmentsByUser(userId);
     const activeEnrollments = userEnrollments.filter(e => e.status === 'active');
     const completedEnrollments = userEnrollments.filter(e => e.status === 'completed' || e.completedAt);
-    const expiringEnrollments = activeEnrollments.filter(e => 
+    const expiringEnrollments = activeEnrollments.filter(e =>
       e.expiresAt && e.expiresAt <= thirtyDaysFromNow && e.expiresAt >= now
     );
 
     // Get user's renewal requests
     const userRenewals = await this.getRenewalRequestsByUser(userId);
-    const pendingRenewals = userRenewals.filter(r => 
+    const pendingRenewals = userRenewals.filter(r =>
       r.status === 'pending' || r.status === 'foreman_approved'
     );
 

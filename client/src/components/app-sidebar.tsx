@@ -55,7 +55,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   {
     title: "Dashboard",
-    url: "/",
+    url: "/dashboard",
     icon: LayoutDashboard,
     roles: ["employee", "foreman", "manager", "training_officer", "administrator"],
   },
@@ -123,13 +123,13 @@ const navItems: NavItem[] = [
     title: "User Management",
     url: "/users",
     icon: Users,
-    roles: ["administrator"],
+    roles: ["administrator", "manager"],
   },
   {
     title: "Departments",
     url: "/departments",
     icon: Building2,
-    roles: ["administrator"],
+    roles: ["administrator", "manager"],
   },
   {
     title: "Audit Logs",
@@ -198,8 +198,8 @@ export function AppSidebar() {
   );
 
   const getInitials = () => {
-    if (user?.first_name && user?.last_name) {
-      return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
+    if (user?.firstName && user?.lastName) {
+      return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
     }
     if (user?.email) {
       return user.email[0].toUpperCase();
@@ -208,8 +208,8 @@ export function AppSidebar() {
   };
 
   const getDisplayName = () => {
-    if (user?.first_name && user?.last_name) {
-      return `${user.first_name} ${user.last_name}`;
+    if (user?.firstName && user?.lastName) {
+      return `${user.firstName} ${user.lastName}`;
     }
     return user?.email || "User";
   };
@@ -220,7 +220,7 @@ export function AppSidebar() {
         <Link href="/">
           <div className="flex items-center gap-3 cursor-pointer" data-testid="link-logo">
             <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-              <GraduationCap className="h-6 w-6 text-primary-foreground" />
+              <Building2 className="h-6 w-6 text-primary-foreground" />
             </div>
             <div>
               <h1 className="font-semibold text-lg tracking-tight">TrainFlow</h1>

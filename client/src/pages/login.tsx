@@ -122,17 +122,7 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-            <p className="text-sm text-slate-600 dark:text-slate-400 text-center mb-4">
-              Demo credentials:
-            </p>
-            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-3 rounded">
-              <div><strong>Admin:</strong> admin@democorp.local</div>
-              <div><strong>Manager:</strong> manager1@democorp.local</div>
-              <div><strong>Employee:</strong> employee1@democorp.local</div>
-              <div><strong>Password:</strong> TrainFlow123!</div>
-            </div>
-          </div>
+
         </Card>
 
         <div className="mt-6 text-center">
